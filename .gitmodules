@@ -1,0 +1,12 @@
+[submodule "thirdparty/glfw"]
+	path = thirdparty/glfw
+	url = https://github.com/aezaqiel/glfw
+[submodule "thirdparty/volk"]
+	path = thirdparty/volk
+	url = https://github.com/aezaqiel/volk
+[submodule "thirdparty/glm"]
+	path = thirdparty/glm
+	url = https://github.com/aezaqiel/glm
+[submodule "thirdparty/vma"]
+	path = thirdparty/vma
+	url = https://github.com/aezaqiel/VulkanMemoryAllocator.git

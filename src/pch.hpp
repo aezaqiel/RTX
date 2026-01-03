@@ -1,0 +1,123 @@
+#pragma once
+
+// C++ std lib (C++23)
+
+#include <cstdlib>
+#include <execution>
+
+#include <cfloat>
+#include <climits>
+#include <compare>
+#include <coroutine>
+#include <csetjmp>
+#include <csignal>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <initializer_list>
+#include <limits>
+#include <new>
+#include <source_location>
+#include <stdfloat>
+#include <typeindex>
+#include <typeinfo>
+#include <version>
+
+#include <cassert>
+#include <cerrno>
+#include <concepts>
+#include <stacktrace>
+#include <stdexcept>
+#include <system_error>
+
+#include <memory>
+#include <memory_resource>
+#include <scoped_allocator>
+
+#include <ratio>
+#include <type_traits>
+
+#include <any>
+#include <bit>
+#include <bitset>
+#include <expected>
+#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+#include <variant>
+
+#include <array>
+#include <deque>
+#include <forward_list>
+#include <list>
+#include <map>
+#include <mdspan>
+#include <queue>
+#include <set>
+#include <span>
+#include <stack>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+#include <iterator>
+
+#include <ranges>
+
+#include <algorithm>
+#include <numeric>
+
+#include <cstring>
+#include <string>
+#include <string_view>
+
+#include <cctype>
+#include <charconv>
+#include <clocale>
+#include <cuchar>
+#include <cwchar>
+#include <cwctype>
+#include <format>
+#include <locale>
+#include <regex>
+
+#include <cfenv>
+#include <cmath>
+#include <complex>
+#include <numbers>
+#include <random>
+#include <valarray>
+
+#include <chrono>
+#include <ctime>
+
+#include <cinttypes>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <ios>
+#include <iosfwd>
+#include <iostream>
+#include <istream>
+#include <ostream>
+#include <print>
+#include <spanstream>
+#include <sstream>
+#include <streambuf>
+#include <syncstream>
+
+#include <atomic>
+#include <barrier>
+#include <condition_variable>
+#include <future>
+#include <latch>
+#include <mutex>
+#include <semaphore>
+#include <shared_mutex>
+#include <stop_token>
+#include <thread>
+
+#include "types.hpp"

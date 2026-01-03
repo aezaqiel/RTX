@@ -110,6 +110,94 @@ auto main() -> i32
     VkSurfaceKHR surface;
     VK_CHECK(glfwCreateWindowSurface(instance, window, nullptr, &surface));
 
+    VkPhysicalDevice physical_device;
+
+    u32 graphics_queue_index = 0;
+    u32 compute_queue_index  = 0;
+    u32 transfer_queue_index = 0;
+
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR as_props {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
+    };
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_props {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR,
+        .pNext = &as_props
+    };
+
+    VkPhysicalDeviceProperties2 device_props {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &rt_props
+    };
+
+    {
+        u32 device_count = 0;
+        vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+        std::vector<VkPhysicalDevice> available_devices(device_count);
+        vkEnumeratePhysicalDevices(instance, &device_count, available_devices.data());
+
+        for (const auto& device : available_devices) {
+            VkPhysicalDeviceProperties props;
+            vkGetPhysicalDeviceProperties(device, &props);
+
+            if (!(props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)) {
+                continue;
+            }
+
+            u32 queue_count = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, nullptr);
+            std::vector<VkQueueFamilyProperties> available_queues(queue_count);
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, available_queues.data());
+
+            std::optional<u32> graphics;
+            std::optional<u32> compute;
+            std::optional<u32> transfer;
+
+            u32 queue_index = 0;
+            for (const auto& queue : available_queues) {
+                VkBool32 present = VK_FALSE;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_index, surface, &present);
+
+                if ((queue.queueFlags & VK_QUEUE_GRAPHICS_BIT) && present == VK_TRUE) {
+                    if (!graphics.has_value()) graphics = queue_index;
+                }
+
+                if ((queue.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(queue.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                    if (!compute.has_value()) compute = queue_index;
+                }
+
+                if ((queue.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(queue.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(queue.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                    if (!transfer.has_value()) transfer = queue_index;
+                }
+
+                queue_index++;
+            }
+
+            if (graphics.has_value() && compute.has_value() && transfer.has_value()) {
+                physical_device = device;
+
+                graphics_queue_index = graphics.value();
+                compute_queue_index = compute.value();
+                transfer_queue_index = transfer.value();
+
+                vkGetPhysicalDeviceProperties2(physical_device, &device_props);
+
+                std::println("physical device: {}", device_props.properties.deviceName);
+                std::println("graphics queue index: {}", graphics_queue_index);
+                std::println("compute queue index: {}", compute_queue_index);
+                std::println("transfer queue index: {}", transfer_queue_index);
+
+                break;
+            }
+        }
+    }
+
+    VkDevice device;
+
+    VkQueue graphics_queue;
+    VkQueue compute_queue;
+    VkQueue transfer_queue;
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
@@ -132,10 +220,10 @@ auto messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebug
     if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) { ss << "[ADDRESS]"; }
 
     switch (severity) {
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:   ss << "[VERBOSE]";
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:      ss << "[INFO]";
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:   ss << "[WARNING]";
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:     ss << "[ERROR]";
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:   ss << "[VERBOSE]"; break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:      ss << "[INFO]";    break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:   ss << "[WARNING]"; break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:     ss << "[ERROR]";   break;
         default: ss << "[UNKNOWN]";
     }
 

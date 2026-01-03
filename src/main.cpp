@@ -9,8 +9,8 @@ auto messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebug
 
 auto main() -> i32
 {
-    i32 width = 1280;
-    i32 height = 720;
+    i32 window_width = 1280;
+    i32 window_height = 720;
 
     glfwSetErrorCallback([](i32 code, const char* desc) {
         std::println(std::cerr, "glfw error ({}): {}", code, desc);
@@ -23,8 +23,8 @@ auto main() -> i32
 
     GLFWwindow* window = glfwCreateWindow(1280, 720, "RTX", nullptr, nullptr);
     {
-        glfwGetFramebufferSize(window, &width, &height);
-        std::println("created window \"{}\" ({}, {})", glfwGetWindowTitle(window), width, height);
+        glfwGetFramebufferSize(window, &window_width, &window_height);
+        std::println("created window \"{}\" ({}, {})", glfwGetWindowTitle(window), window_width, window_height);
     }
 
     VK_CHECK(volkInitialize());
@@ -301,9 +301,129 @@ auto main() -> i32
         }
     }
 
+    VkSurfaceCapabilitiesKHR surface_caps;
+    VkSurfaceFormatKHR surface_format;
+    VkPresentModeKHR present_mode;
+    VkExtent2D extent;
+
+    { // swapchaind details
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_caps);
+
+        u32 format_count = 0;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, nullptr);
+        std::vector<VkSurfaceFormatKHR> available_formats(format_count);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, available_formats.data());
+
+        surface_format = available_formats[0];
+        for (const auto& format : available_formats) {
+            if (format.format == VK_FORMAT_R8G8B8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                surface_format = format;
+                break;
+            }
+        }
+
+        u32 mode_count = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &mode_count, nullptr);
+        std::vector<VkPresentModeKHR> available_modes(mode_count);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &mode_count, available_modes.data());
+
+        present_mode = VK_PRESENT_MODE_FIFO_KHR;
+        for (const auto& mode : available_modes) {
+            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+                present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+                break;
+            }
+        }
+
+        if (surface_caps.currentExtent.width != std::numeric_limits<u32>::max()) {
+            extent = surface_caps.currentExtent;
+        } else {
+            extent = {
+                .width = std::clamp(static_cast<u32>(window_width), surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width),
+                .height = std::clamp(static_cast<u32>(window_height), surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height)
+            };
+        }
+    }
+
+    VkSwapchainKHR swapchain;
+    u32 swapchain_image_count;
+    std::vector<VkImage> swapchain_images;
+    std::vector<VkImageView> swapchain_image_views;
+
+    { // create swapchain
+        swapchain_image_count = surface_caps.minImageCount + 1;
+        if (surface_caps.maxImageCount > 0) {
+            swapchain_image_count = std::min(swapchain_image_count, surface_caps.maxImageCount);
+        }
+
+        VkSwapchainCreateInfoKHR swapchain_info {
+            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .pNext = nullptr,
+            .flags = 0,
+            .surface = surface,
+            .minImageCount = swapchain_image_count,
+            .imageFormat = surface_format.format,
+            .imageColorSpace = surface_format.colorSpace,
+            .imageExtent = extent,
+            .imageArrayLayers = 1,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr,
+            .preTransform = surface_caps.currentTransform,
+            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = present_mode,
+            .clipped = VK_TRUE,
+            .oldSwapchain = VK_NULL_HANDLE
+        };
+
+        VK_CHECK(vkCreateSwapchainKHR(device, &swapchain_info, nullptr, &swapchain));
+
+        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr);
+
+        swapchain_images.resize(swapchain_image_count);
+        swapchain_image_views.resize(swapchain_image_count);
+
+        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_images.data());
+
+        for (u32 i = 0; i < swapchain_image_count; ++i) {
+            VkImageViewCreateInfo view_info {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .image = swapchain_images[i],
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = surface_format.format,
+                .components = {
+                    .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .a = VK_COMPONENT_SWIZZLE_IDENTITY
+                },
+                .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
+            VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &swapchain_image_views[i]));
+        }
+    }
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
+
+    for (u32 i = 0; i < swapchain_image_count; ++i) {
+        vkDestroyImageView(device, swapchain_image_views[i], nullptr);
+    }
+
+    vkDestroySwapchainKHR(device, swapchain, nullptr);
+    swapchain_image_views.clear();
+    swapchain_images.clear();
 
     vmaDestroyAllocator(allocator);
     vkDestroyDevice(device, nullptr);

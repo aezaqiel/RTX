@@ -107,10 +107,14 @@ auto main() -> i32
         }
     }
 
+    VkSurfaceKHR surface;
+    VK_CHECK(glfwCreateWindowSurface(instance, window, nullptr, &surface));
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
 
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
     vkDestroyInstance(instance, nullptr);
 

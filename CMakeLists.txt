@@ -25,6 +25,7 @@ add_subdirectory(thirdparty/vma)
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/types.hpp
+    src/vk_types.hpp
 
     src/platform/vma_impl.cpp
 )

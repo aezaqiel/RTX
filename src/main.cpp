@@ -32,10 +32,10 @@ auto main() -> i32
     VkInstance instance;
     VkDebugUtilsMessengerEXT messenger;
 
-    {
+    { // instance creation
         u32 version = volkGetInstanceVersion();
 
-        std::println("vulkan instance: {}.{}.{}",
+        std::println("vulkan instance : {}.{}.{}",
             VK_VERSION_MAJOR(version),
             VK_VERSION_MINOR(version),
             VK_VERSION_PATCH(version)
@@ -130,7 +130,7 @@ auto main() -> i32
         .pNext = &rt_props
     };
 
-    {
+    { // physical device selection
         u32 device_count = 0;
         vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
         std::vector<VkPhysicalDevice> available_devices(device_count);
@@ -182,10 +182,10 @@ auto main() -> i32
 
                 vkGetPhysicalDeviceProperties2(physical_device, &device_props);
 
-                std::println("physical device: {}", device_props.properties.deviceName);
-                std::println("graphics queue index: {}", graphics_queue_index);
-                std::println("compute queue index: {}", compute_queue_index);
-                std::println("transfer queue index: {}", transfer_queue_index);
+                std::println("physical device : {}", device_props.properties.deviceName);
+                std::println("graphics queue index : {}", graphics_queue_index);
+                std::println("compute queue index  : {}", compute_queue_index);
+                std::println("transfer queue index : {}", transfer_queue_index);
 
                 break;
             }
@@ -193,15 +193,120 @@ auto main() -> i32
     }
 
     VkDevice device;
+    VmaAllocator allocator;
 
     VkQueue graphics_queue;
     VkQueue compute_queue;
     VkQueue transfer_queue;
 
+    { // device creation
+        std::set<u32> indices { graphics_queue_index, compute_queue_index, transfer_queue_index };
+
+        std::vector<VkDeviceQueueCreateInfo> queue_infos;
+        queue_infos.reserve(indices.size());
+
+        for (u32 index : indices) {
+            f32 priority = 1.0f;
+            queue_infos.push_back(VkDeviceQueueCreateInfo {
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .queueFamilyIndex = index,
+                .queueCount = 1,
+                .pQueuePriorities = &priority
+            });
+        }
+
+        VkPhysicalDeviceVulkan14Features features14 {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
+            .pNext = nullptr,
+            .pushDescriptor = VK_TRUE
+        };
+
+        VkPhysicalDeviceVulkan13Features features13 {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+            .pNext = &features14,
+            .synchronization2 = VK_TRUE,
+            .dynamicRendering = VK_TRUE
+        };
+
+        VkPhysicalDeviceVulkan12Features features12 {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            .pNext = &features13,
+            .scalarBlockLayout = VK_TRUE,
+            .timelineSemaphore = VK_TRUE,
+            .bufferDeviceAddress = VK_TRUE
+        };
+
+        VkPhysicalDeviceVulkan11Features features11 {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+            .pNext = &features12
+        };
+
+        VkPhysicalDeviceFeatures2 features {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext = &features11,
+            .features = {
+                .samplerAnisotropy = VK_TRUE
+            }
+        };
+
+        std::vector<const char*> extensions {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
+
+        VkDeviceCreateInfo device_info {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = &features,
+            .flags = 0,
+            .queueCreateInfoCount = static_cast<u32>(queue_infos.size()),
+            .pQueueCreateInfos = queue_infos.data(),
+            .enabledLayerCount = 0,
+            .ppEnabledLayerNames = nullptr,
+            .enabledExtensionCount = static_cast<u32>(extensions.size()),
+            .ppEnabledExtensionNames = extensions.data(),
+            .pEnabledFeatures = nullptr
+        };
+
+        VK_CHECK(vkCreateDevice(physical_device, &device_info, nullptr, &device));
+        volkLoadDevice(device);
+
+        VmaAllocatorCreateInfo allocator_info {
+            .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+            .physicalDevice = physical_device,
+            .device = device,
+            .preferredLargeHeapBlockSize = 0,
+            .pAllocationCallbacks = nullptr,
+            .pDeviceMemoryCallbacks = nullptr,
+            .pHeapSizeLimit = nullptr,
+            .pVulkanFunctions = nullptr,
+            .instance = instance,
+            .vulkanApiVersion = VK_API_VERSION_1_4
+        };
+
+        VmaVulkanFunctions vma_funcs;
+        vmaImportVulkanFunctionsFromVolk(&allocator_info, &vma_funcs);
+
+        allocator_info.pVulkanFunctions = &vma_funcs;
+
+        VK_CHECK(vmaCreateAllocator(&allocator_info, &allocator));
+
+        vkGetDeviceQueue(device, graphics_queue_index, 0, &graphics_queue);
+        vkGetDeviceQueue(device, compute_queue_index, 0, &compute_queue);
+        vkGetDeviceQueue(device, transfer_queue_index, 0, &transfer_queue);
+
+        std::println("device extensions:");
+        for (const auto& extension : extensions) {
+            std::println(" - {}", extension);
+        }
+    }
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
 
+    vmaDestroyAllocator(allocator);
+    vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
     vkDestroyInstance(instance, nullptr);

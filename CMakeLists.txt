@@ -28,6 +28,9 @@ add_executable(${PROJECT_NAME}
     src/types.hpp
     src/vk_types.hpp
 
+    src/rhi/command.hpp
+    src/rhi/sync.hpp
+
     src/scene/mesh.hpp
     src/scene/model.hpp
     src/scene/loader.hpp

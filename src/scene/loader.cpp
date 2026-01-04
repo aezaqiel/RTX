@@ -84,7 +84,7 @@ auto Loader::load_obj(const std::string& filename) -> Model
     if (normals.size() != positions.size()) normals.clear();
     if (texcoords.size() != positions.size()) texcoords.clear();
 
-    std::println("loaded model: {}, ({} vertices, {} shapes)", filename, positions.size(), shapes.size());
+    std::println("loaded model: {}, ({} vertices)", filename, positions.size());
 
     return Model { .mesh = std::make_unique<Mesh>(positions, indices, normals, texcoords) };
 }

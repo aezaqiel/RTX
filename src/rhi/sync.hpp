@@ -81,9 +81,8 @@ struct FrameContext
 
     CommandContext graphics;
     CommandContext compute;
-    CommandContext transfer;
 
-    static auto create(VkDevice device, u32 graphics, u32 compute, u32 transfer) -> FrameContext
+    static auto create(VkDevice device, u32 graphics, u32 compute) -> FrameContext
     {
         FrameContext context;
 
@@ -98,7 +97,6 @@ struct FrameContext
 
         context.graphics = CommandContext::create(device, graphics);
         context.compute = CommandContext::create(device, compute);
-        context.transfer = CommandContext::create(device, transfer);
 
         return context;
     }
@@ -108,7 +106,6 @@ struct FrameContext
         vkDestroySemaphore(device, image_available, nullptr);
         vkDestroySemaphore(device, render_complete, nullptr);
 
-        transfer.destroy(device);
         compute.destroy(device);
         graphics.destroy(device);
     }

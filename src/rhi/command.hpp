@@ -52,4 +52,25 @@ struct CommandContext
         function(buffer);
         VK_CHECK(vkEndCommandBuffer(buffer));
     }
+
+    // NOT OPTIMAL
+    auto execute(VkDevice device, VkQueue queue, std::function<void(VkCommandBuffer)>&& function) -> void
+    {
+        record(device, std::move(function));
+
+        VkSubmitInfo submit {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = nullptr,
+            .pWaitDstStageMask = nullptr,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &buffer,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = nullptr
+        };
+
+        vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+        vkQueueWaitIdle(queue);
+    }
 };

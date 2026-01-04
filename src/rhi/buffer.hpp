@@ -29,7 +29,7 @@ struct Buffer
 
         VmaAllocationCreateInfo alloc_info {
             .flags = alloc_flags,
-            .usage = memory_usage
+            .usage = memory_usage,
         };
 
         VK_CHECK(vmaCreateBuffer(allocator, &buffer_info, &alloc_info, &buffer.handle, &buffer.allocation, nullptr));

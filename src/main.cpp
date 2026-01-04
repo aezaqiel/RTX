@@ -11,11 +11,81 @@ namespace {
 
     constexpr usize FRAMES_IN_FLIGHT = 3;
 
+    struct QueueSync
+    {
+        VkQueue queue;
+        VkSemaphore timeline;
+        u64 value { 0 };
+
+        static auto create(VkDevice device, VkQueue queue) -> QueueSync
+        {
+            QueueSync sync;
+            sync.queue = queue;
+            sync.value = 0;
+
+            VkSemaphoreTypeCreateInfo type_info {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                .pNext = nullptr,
+                .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+                .initialValue = sync.value
+            };
+
+            VkSemaphoreCreateInfo info {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                .pNext = &type_info,
+                .flags = 0
+            };
+
+            VK_CHECK(vkCreateSemaphore(device, &info, nullptr, &sync.timeline));
+            return sync;
+        }
+
+        auto destroy(VkDevice device) -> void
+        {
+            vkDestroySemaphore(device, timeline, nullptr);
+        }
+
+        auto submit(VkDevice device, VkCommandBuffer cmd, const std::vector<VkSemaphoreSubmitInfo>& waits, std::vector<VkSemaphoreSubmitInfo>& signals) -> u64
+        {
+            value++;
+
+            signals.push_back(VkSemaphoreSubmitInfo {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                .pNext = nullptr,
+                .semaphore = timeline,
+                .value = value,
+                .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                .deviceIndex = 0
+            });
+
+            VkCommandBufferSubmitInfo cmd_info {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+                .pNext = nullptr,
+                .commandBuffer = cmd,
+                .deviceMask = 0
+            };
+
+            VkSubmitInfo2 submit {
+                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                .pNext = nullptr,
+                .flags = 0,
+                .waitSemaphoreInfoCount = static_cast<u32>(waits.size()),
+                .pWaitSemaphoreInfos = waits.data(),
+                .commandBufferInfoCount = 1,
+                .pCommandBufferInfos = &cmd_info,
+                .signalSemaphoreInfoCount = static_cast<u32>(signals.size()),
+                .pSignalSemaphoreInfos = signals.data()
+            };
+
+            VK_CHECK(vkQueueSubmit2(queue, 1, &submit, VK_NULL_HANDLE));
+            return value;
+        }
+    };
+
     struct CommandContext
     {
         VkCommandPool pool;
         VkCommandBuffer buffer;
-        VkSemaphore semaphore;
 
         static auto create(VkDevice device, u32 queue_index) -> CommandContext
         {
@@ -38,19 +108,12 @@ namespace {
             };
             VK_CHECK(vkAllocateCommandBuffers(device, &buffer_allocation, &context.buffer));
 
-            VkSemaphoreCreateInfo semaphore_info {
-                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0
-            };
-            VK_CHECK(vkCreateSemaphore(device, &semaphore_info, nullptr, &context.semaphore));
-
             return context;
         }
 
         auto destroy(VkDevice device) -> void
         {
-            vkDestroySemaphore(device, semaphore, nullptr);
+            vkResetCommandPool(device, pool, 0);
             vkDestroyCommandPool(device, pool, nullptr);
         }
 
@@ -69,29 +132,12 @@ namespace {
             function(buffer);
             VK_CHECK(vkEndCommandBuffer(buffer));
         }
-
-        auto submit(VkDevice device, VkQueue queue, const std::vector<VkSemaphore>& wait = {}, const std::vector<VkPipelineStageFlags>& stages = {}) -> void
-        {
-            VkSubmitInfo submit_info {
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .pNext = nullptr,
-                .waitSemaphoreCount = static_cast<u32>(wait.size()),
-                .pWaitSemaphores = wait.data(),
-                .pWaitDstStageMask = stages.data(),
-                .commandBufferCount = 1,
-                .pCommandBuffers = &buffer,
-                .signalSemaphoreCount = 1,
-                .pSignalSemaphores = &semaphore
-            };
-
-            VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE));
-        }
     };
 
     struct FrameContext
     {
         VkSemaphore image_available;
-        VkFence fence;
+        VkSemaphore render_complete;
 
         CommandContext graphics;
         CommandContext compute;
@@ -107,14 +153,8 @@ namespace {
                 .flags = 0
             };
 
-            VkFenceCreateInfo fence_info {
-                .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = VK_FENCE_CREATE_SIGNALED_BIT
-            };
-
             VK_CHECK(vkCreateSemaphore(device, &semaphore_info, nullptr, &context.image_available));
-            VK_CHECK(vkCreateFence(device, &fence_info, nullptr, &context.fence));
+            VK_CHECK(vkCreateSemaphore(device, &semaphore_info, nullptr, &context.render_complete));
 
             context.graphics = CommandContext::create(device, graphics);
             context.compute = CommandContext::create(device, compute);
@@ -126,7 +166,7 @@ namespace {
         auto destroy(VkDevice device) -> void
         {
             vkDestroySemaphore(device, image_available, nullptr);
-            vkDestroyFence(device, fence, nullptr);
+            vkDestroySemaphore(device, render_complete, nullptr);
 
             transfer.destroy(device);
             compute.destroy(device);
@@ -346,15 +386,9 @@ auto main() -> i32
             });
         }
 
-        VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR swapchain_maintenance {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR,
-            .pNext = nullptr,
-            .swapchainMaintenance1 = VK_TRUE
-        };
-
         VkPhysicalDeviceVulkan14Features features14 {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
-            .pNext = &swapchain_maintenance,
+            .pNext = nullptr,
             .pushDescriptor = VK_TRUE
         };
 
@@ -547,6 +581,10 @@ auto main() -> i32
             VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &swapchain_image_views[i]));
         }
     }
+    
+    QueueSync graphics_sync = QueueSync::create(device, graphics_queue);
+    QueueSync compute_sync = QueueSync::create(device, compute_queue);
+    QueueSync transfer_sync = QueueSync::create(device, transfer_queue);
 
     std::array<FrameContext, FRAMES_IN_FLIGHT> frames;
     for (auto& frame : frames) {
@@ -562,15 +600,30 @@ auto main() -> i32
         glfwPollEvents();
         
         FrameContext& frame = frames[frame_count % FRAMES_IN_FLIGHT];
+        if (frame_count >= FRAMES_IN_FLIGHT) {
+            u64 wait_value = frame_count - FRAMES_IN_FLIGHT + 1;
 
-        VK_CHECK(vkWaitForFences(device, 1, &frame.fence, VK_TRUE, std::numeric_limits<u64>::max()));
-        VK_CHECK(vkResetFences(device, 1, &frame.fence));
+            VkSemaphoreWaitInfo wait_info {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .semaphoreCount = 1,
+                .pSemaphores = &graphics_sync.timeline,
+                .pValues = &wait_value
+            };
+
+            VK_CHECK(vkWaitSemaphores(device, &wait_info, std::numeric_limits<u64>::max()));
+        }
 
         u32 swapchain_index;
         vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<u64>::max(), frame.image_available, VK_NULL_HANDLE, &swapchain_index);
 
         frame.compute.record(device, [&](VkCommandBuffer cmd) {
         });
+
+        std::vector<VkSemaphoreSubmitInfo> compute_waits;
+        std::vector<VkSemaphoreSubmitInfo> compute_signals;
+        u64 compute_signal_value = compute_sync.submit(device, frame.compute.buffer, compute_waits, compute_signals);
 
         frame.graphics.record(device, [&](VkCommandBuffer cmd) {
             VkImageMemoryBarrier2 barrier {
@@ -609,24 +662,44 @@ auto main() -> i32
             vkCmdPipelineBarrier2(cmd, &dependency);
         });
 
-        frame.compute.submit(device, compute_queue);
-        frame.graphics.submit(device, graphics_queue,
-            { frame.image_available, frame.compute.semaphore },
-            { VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT }
-        );
+        std::vector<VkSemaphoreSubmitInfo> graphics_waits;
 
-        VkSwapchainPresentFenceInfoKHR present_fence {
-            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR,
+        graphics_waits.push_back(VkSemaphoreSubmitInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
             .pNext = nullptr,
-            .swapchainCount = 1,
-            .pFences = &frame.fence
-        };
+            .semaphore = frame.image_available,
+            .value = 0,
+            .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .deviceIndex = 0
+        });
+
+        graphics_waits.push_back(VkSemaphoreSubmitInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .semaphore = compute_sync.timeline,
+            .value = compute_signal_value,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .deviceIndex = 0
+        });
+
+        std::vector<VkSemaphoreSubmitInfo> graphics_signals;
+
+        graphics_signals.push_back(VkSemaphoreSubmitInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .semaphore = frame.render_complete,
+            .value = 0,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .deviceIndex = 0
+        });
+
+        u64 graphics_signal_value = graphics_sync.submit(device, frame.graphics.buffer, graphics_waits, graphics_signals);
 
         VkPresentInfoKHR present_info {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .pNext = &present_fence,
+            .pNext = nullptr,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &frame.graphics.semaphore,
+            .pWaitSemaphores = &frame.render_complete,
             .swapchainCount = 1,
             .pSwapchains = &swapchain,
             .pImageIndices = &swapchain_index,
@@ -643,6 +716,10 @@ auto main() -> i32
     for (auto& frame : frames) {
         frame.destroy(device);
     }
+
+    graphics_sync.destroy(device);
+    compute_sync.destroy(device);
+    transfer_sync.destroy(device);
 
     for (u32 i = 0; i < swapchain_image_count; ++i) {
         vkDestroyImageView(device, swapchain_image_views[i], nullptr);

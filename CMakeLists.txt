@@ -28,12 +28,18 @@ add_executable(${PROJECT_NAME}
     src/types.hpp
     src/vk_types.hpp
 
+    src/scene/mesh.hpp
+    src/scene/model.hpp
+    src/scene/loader.hpp
+    src/scene/loader.cpp
+
     src/platform/vma_impl.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
 PRIVATE
     src
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -70,6 +76,14 @@ if(NOT MSVC)
         "-Wno-nullability-completeness"
     )
 endif()
+
+file(TO_CMAKE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/res RES_FOLDER)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/PathConfig.inl
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/PathConfig.inl
+    @ONLY
+)
 
 find_program(GLSLC_EXE NAMES glslc HINTS Vulkan::glslc)
 

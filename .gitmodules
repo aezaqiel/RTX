@@ -13,3 +13,6 @@
 [submodule "thirdparty/tinyobjloader"]
 	path = thirdparty/tinyobjloader
 	url = https://github.com/aezaqiel/tinyobjloader
+[submodule "res/assets/sponza"]
+	path = res/assets/sponza
+	url = https://github.com/jimmiebergmann/Sponza.git

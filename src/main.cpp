@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include "scene/loader.hpp"
+
 auto messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) -> VkBool32;
 
 namespace {
@@ -581,6 +583,8 @@ auto main() -> i32
             VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &swapchain_image_views[i]));
         }
     }
+
+    auto model = Loader::load_obj("assets/sponza/sponza.obj");
     
     QueueSync graphics_sync = QueueSync::create(device, graphics_queue);
     QueueSync compute_sync = QueueSync::create(device, compute_queue);

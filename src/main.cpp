@@ -7,6 +7,7 @@
 
 #include "rhi/command.hpp"
 #include "rhi/sync.hpp"
+#include "rhi/buffer.hpp"
 
 #include "scene/loader.hpp"
 

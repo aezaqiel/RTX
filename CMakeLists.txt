@@ -30,6 +30,7 @@ add_executable(${PROJECT_NAME}
 
     src/rhi/command.hpp
     src/rhi/sync.hpp
+    src/rhi/buffer.hpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp

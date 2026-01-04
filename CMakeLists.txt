@@ -21,6 +21,7 @@ add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/volk)
 add_subdirectory(thirdparty/glm)
 add_subdirectory(thirdparty/vma)
+add_subdirectory(thirdparty/tinyobjloader)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
@@ -41,6 +42,7 @@ PRIVATE
     volk
     glm
     VulkanMemoryAllocator
+    tinyobjloader
 )
 
 target_compile_definitions(${PROJECT_NAME}

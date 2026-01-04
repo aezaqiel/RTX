@@ -34,12 +34,10 @@ auto Loader::load_obj(const std::string& filename) -> Model
 
     std::vector<glm::vec3> positions;
     std::vector<u32> indices;
-    std::vector<glm::vec3> normals;
-    std::vector<glm::vec2> texcoords;
+    std::vector<Mesh::VertexAttribute> attributes;
 
     positions.reserve(attrib.vertices.size() / 3);
-    normals.reserve(attrib.normals.size() / 3);
-    texcoords.reserve(attrib.texcoords.size() / 2);
+    attributes.reserve(attrib.vertices.size() / 3);
 
     for (const auto& shape : shapes) {
         usize offset = 0;
@@ -59,21 +57,24 @@ auto Loader::load_obj(const std::string& filename) -> Model
                     attrib.vertices[3 * idx.vertex_index + 2]
                 });
 
+                Mesh::VertexAttribute vertex_attrib;
+
                 if (idx.normal_index >= 0) {
-                    normals.push_back({
+                    vertex_attrib.normal = {
                         attrib.normals[3 * idx.normal_index + 0],
                         attrib.normals[3 * idx.normal_index + 1],
                         attrib.normals[3 * idx.normal_index + 2]
-                    });
+                    };
                 }
 
                 if (idx.texcoord_index >= 0) {
-                    texcoords.push_back({
+                    vertex_attrib.uv = {
                         attrib.texcoords[2 * idx.texcoord_index + 0],
                         attrib.texcoords[2 * idx.texcoord_index + 1]
-                    });
+                    };
                 }
 
+                attributes.push_back(vertex_attrib);
                 indices.push_back(static_cast<u32>(indices.size()));
             }
 
@@ -81,10 +82,12 @@ auto Loader::load_obj(const std::string& filename) -> Model
         }
     }
 
-    if (normals.size() != positions.size()) normals.clear();
-    if (texcoords.size() != positions.size()) texcoords.clear();
+    auto mesh = std::make_unique<Mesh>();
+    mesh->positions = positions;
+    mesh->indices = indices;
+    mesh->attributes = attributes;
 
     std::println("loaded model: {}, ({} vertices)", filename, positions.size());
 
-    return Model { .mesh = std::make_unique<Mesh>(positions, indices, normals, texcoords) };
+    return Model { .mesh = std::move(mesh) };
 }

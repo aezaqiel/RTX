@@ -28,6 +28,8 @@ add_executable(${PROJECT_NAME}
     src/types.hpp
     src/vk_types.hpp
 
+    src/rhi/context.hpp
+    src/rhi/context.cpp
     src/rhi/command.hpp
     src/rhi/sync.hpp
     src/rhi/buffer.hpp

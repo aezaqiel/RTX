@@ -5,13 +5,12 @@
 
 #include <glm/glm.hpp>
 
+#include "rhi/context.hpp"
 #include "rhi/command.hpp"
 #include "rhi/sync.hpp"
 #include "rhi/buffer.hpp"
 
 #include "scene/loader.hpp"
-
-auto messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) -> VkBool32;
 
 namespace {
 
@@ -43,90 +42,7 @@ auto main() -> i32
 
     std::println("creating vulkan instance");
 
-    VK_CHECK(volkInitialize());
-
-    VkInstance instance;
-    VkDebugUtilsMessengerEXT messenger;
-
-    { // instance creation
-        u32 version = volkGetInstanceVersion();
-
-        std::println("vulkan instance : {}.{}.{}",
-            VK_VERSION_MAJOR(version),
-            VK_VERSION_MINOR(version),
-            VK_VERSION_PATCH(version)
-        );
-
-        if (version < VK_API_VERSION_1_4) {
-            std::println(std::cerr, "vulkan 1.4 required");
-        }
-
-        VkApplicationInfo info {
-            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            .pNext = nullptr,
-            .pApplicationName = "RTX",
-            .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-            .pEngineName = "no engine",
-            .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-            .apiVersion = VK_API_VERSION_1_4
-        };
-
-        std::vector<const char*> layers;
-        std::vector<const char*> extensions;
-
-#ifndef NDEBUG
-        layers.push_back("VK_LAYER_KHRONOS_validation");
-#endif
-
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-        {
-            u32 glfw_extension_count = 0;
-            const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-            extensions.insert(extensions.end(), glfw_extensions, glfw_extensions + glfw_extension_count);
-        }
-
-        VkDebugUtilsMessengerCreateInfoEXT messenger_info {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .pNext = nullptr,
-            .flags = 0,
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = messenger_callback,
-            .pUserData = nullptr
-        };
-
-        VkInstanceCreateInfo instance_info {
-            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            .pNext = &messenger_info,
-            .flags = 0,
-            .pApplicationInfo = &info,
-            .enabledLayerCount = static_cast<u32>(layers.size()),
-            .ppEnabledLayerNames = layers.data(),
-            .enabledExtensionCount = static_cast<u32>(extensions.size()),
-            .ppEnabledExtensionNames = extensions.data()
-        };
-
-        VK_CHECK(vkCreateInstance(&instance_info, nullptr, &instance));
-        volkLoadInstance(instance);
-
-        VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &messenger_info, nullptr, &messenger));
-
-        std::println("instance layers:");
-        for (const auto& layer : layers) {
-            std::println(" - {}", layer);
-        }
-
-        std::println("instance extensions:");
-        for (const auto& extension : extensions) {
-            std::println(" - {}", extension);
-        }
-    }
-
-    std::println("creating vulkan surface");
-
-    VkSurfaceKHR surface;
-    VK_CHECK(glfwCreateWindowSurface(instance, window, nullptr, &surface));
+    auto context = std::make_shared<RHI::Context>(window);
 
     std::println("choosing physical device");
 
@@ -152,9 +68,9 @@ auto main() -> i32
 
     { // physical device selection
         u32 device_count = 0;
-        vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+        vkEnumeratePhysicalDevices(context->instance(), &device_count, nullptr);
         std::vector<VkPhysicalDevice> available_devices(device_count);
-        vkEnumeratePhysicalDevices(instance, &device_count, available_devices.data());
+        vkEnumeratePhysicalDevices(context->instance(), &device_count, available_devices.data());
 
         for (const auto& device : available_devices) {
             VkPhysicalDeviceProperties props;
@@ -176,7 +92,7 @@ auto main() -> i32
             u32 queue_index = 0;
             for (const auto& queue : available_queues) {
                 VkBool32 present = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_index, surface, &present);
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_index, context->surface(), &present);
 
                 if ((queue.queueFlags & VK_QUEUE_GRAPHICS_BIT) && present == VK_TRUE) {
                     if (!graphics.has_value()) graphics = queue_index;
@@ -325,7 +241,7 @@ auto main() -> i32
             .pDeviceMemoryCallbacks = nullptr,
             .pHeapSizeLimit = nullptr,
             .pVulkanFunctions = nullptr,
-            .instance = instance,
+            .instance = context->instance(),
             .vulkanApiVersion = VK_API_VERSION_1_4
         };
 
@@ -354,12 +270,12 @@ auto main() -> i32
     VkExtent2D extent;
 
     { // swapchain details
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_caps);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, context->surface(), &surface_caps);
 
         u32 format_count = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, context->surface(), &format_count, nullptr);
         std::vector<VkSurfaceFormatKHR> available_formats(format_count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, available_formats.data());
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, context->surface(), &format_count, available_formats.data());
 
         surface_format = available_formats[0];
         for (const auto& format : available_formats) {
@@ -370,9 +286,9 @@ auto main() -> i32
         }
 
         u32 mode_count = 0;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &mode_count, nullptr);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, context->surface(), &mode_count, nullptr);
         std::vector<VkPresentModeKHR> available_modes(mode_count);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &mode_count, available_modes.data());
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, context->surface(), &mode_count, available_modes.data());
 
         present_mode = VK_PRESENT_MODE_FIFO_KHR;
         for (const auto& mode : available_modes) {
@@ -409,7 +325,7 @@ auto main() -> i32
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .pNext = nullptr,
             .flags = 0,
-            .surface = surface,
+            .surface = context->surface(),
             .minImageCount = swapchain_image_count,
             .imageFormat = surface_format.format,
             .imageColorSpace = surface_format.colorSpace,
@@ -910,71 +826,7 @@ auto main() -> i32
 
     vmaDestroyAllocator(allocator);
     vkDestroyDevice(device, nullptr);
-    vkDestroySurfaceKHR(instance, surface, nullptr);
-    vkDestroyDebugUtilsMessengerEXT(instance, messenger, nullptr);
-    vkDestroyInstance(instance, nullptr);
 
     glfwDestroyWindow(window);
     glfwTerminate();
-}
-
-auto messenger_callback(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT type, const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) -> VkBool32
-{
-    std::stringstream ss;
-
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) { ss << "[GENERAL]"; }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) { ss << "[VALIDATION]"; }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) { ss << "[PERFORMANCE]"; }
-    if (type & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT) { ss << "[ADDRESS]"; }
-
-    switch (severity) {
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:   ss << "[VERBOSE]"; break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:      ss << "[INFO]";    break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:   ss << "[WARNING]"; break;
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:     ss << "[ERROR]";   break;
-        default: ss << "[UNKNOWN]";
-    }
-
-    if (data->pMessageIdName) {
-        ss << " (" << data->pMessageIdName << ")";
-    }
-
-    ss << ":\n";
-    ss << "  message: " << data->pMessage << "\n";
-
-    if (data->objectCount > 0) {
-        ss << "  objects (" << data->objectCount << "):\n";
-
-        for (u32 i = 0; i < data->objectCount; ++i) {
-            const auto& obj = data->pObjects[i];
-
-            ss << "    - object " << i << ": ";
-
-            if (obj.pObjectName) {
-                ss << "name = \"" << obj.pObjectName << "\"";
-            } else {
-                ss << "handle = " << reinterpret_cast<void*>(obj.objectHandle);
-            }
-
-            ss << ", type = " << obj.objectType << "\n";
-        }
-    }
-
-    if (data->cmdBufLabelCount > 0) {
-        ss << "  command buffer labels (" << data->cmdBufLabelCount << "):\n";
-        for (u32 i = 0; i < data->cmdBufLabelCount; ++i) {
-            ss << "    - " << data->pCmdBufLabels[i].pLabelName << "\n";
-        }
-    }
-
-    if (data->queueLabelCount > 0) {
-        ss << "  queue labels (" << data->queueLabelCount << "):\n";
-        for (u32 i = 0; i < data->queueLabelCount; ++i) {
-            ss << "    - " << data->pQueueLabels[i].pLabelName << "\n";
-        }
-    }
-
-    std::println(std::cerr, "{}", ss.str());
-
-    return VK_FALSE;
 }

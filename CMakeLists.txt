@@ -13,6 +13,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 
+find_program(GLSLC_EXE NAMES glslc HINTS Vulkan::glslc)
+
+set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
+set(SHADER_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+
+file(TO_CMAKE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/res RES_FOLDER)
+file(TO_CMAKE_PATH ${SHADER_BIN_DIR} SHADER_FOLDER)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/PathConfig.inl
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/PathConfig.inl
+    @ONLY
+)
+
 if(WIN32)
     set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 endif()
@@ -44,6 +58,8 @@ add_executable(${PROJECT_NAME}
     src/rhi/image.cpp
     src/rhi/acceleration_structure.hpp
     src/rhi/acceleration_structure.cpp
+    src/rhi/shader.hpp
+    src/rhi/shader.cpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp
@@ -93,19 +109,6 @@ if(NOT MSVC)
         "-Wno-nullability-completeness"
     )
 endif()
-
-file(TO_CMAKE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/res RES_FOLDER)
-
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/PathConfig.inl
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/PathConfig.inl
-    @ONLY
-)
-
-find_program(GLSLC_EXE NAMES glslc HINTS Vulkan::glslc)
-
-set(SHADER_SRC_DIR ${RES_FOLDER}/Shaders)
-set(SHADER_BIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/Shaders)
 
 function(compile_shaders_target target_name)
     file(GLOB_RECURSE SHADER_SOURCES

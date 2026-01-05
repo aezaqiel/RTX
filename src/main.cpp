@@ -10,6 +10,7 @@
 #include "rhi/command.hpp"
 #include "rhi/buffer.hpp"
 #include "rhi/acceleration_structure.hpp"
+#include "rhi/shader.hpp"
 
 #include "scene/loader.hpp"
 
@@ -151,6 +152,12 @@ auto main() -> i32
 
         compute_queue->sync(signals.back().value);
     }
+
+    std::println("load shaders");
+
+    auto raygen_shader = std::make_unique<RHI::Shader>(device, "raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+    auto closesthit_shader = std::make_unique<RHI::Shader>(device, "closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    auto miss_shader = std::make_unique<RHI::Shader>(device, "miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR);
 
     std::println("render loop start");
 

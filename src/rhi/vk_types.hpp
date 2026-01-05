@@ -3,6 +3,8 @@
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
+#include <glm/glm.hpp>
+
 #ifndef NDEBUG
 
     namespace {
@@ -53,3 +55,20 @@
 #else
     #define VK_CHECK(expr) (expr)
 #endif
+
+namespace vkutils {
+
+    constexpr auto align_up(u64 size, u64 alignment) -> u64
+    {
+        return (size + alignment - 1) & ~(alignment - 1);
+    }
+
+    constexpr auto glm_to_vkmatrix(glm::mat4 mat) -> VkTransformMatrixKHR
+    {
+        mat = glm::transpose(mat);
+        VkTransformMatrixKHR out;
+        std::memcpy(&out, &mat, sizeof(VkTransformMatrixKHR));
+        return out;
+    }
+
+}

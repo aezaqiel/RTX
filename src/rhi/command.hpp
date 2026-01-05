@@ -12,7 +12,7 @@ namespace RHI {
         ~Command();
 
         auto begin(VkCommandPoolResetFlags flags = 0) -> VkCommandBuffer;
-        auto end() -> void;
+        auto end(VkCommandBuffer cmd) -> void;
 
     private:
         std::shared_ptr<Device> m_device;

@@ -51,14 +51,15 @@ namespace RHI {
             .pInheritanceInfo = nullptr
         };
 
-        VK_CHECK(vkBeginCommandBuffer(m_buffers[m_frame_index], &begin_info));
+        VkCommandBuffer cmd = m_buffers[m_frame_index];
+        VK_CHECK(vkBeginCommandBuffer(cmd, &begin_info));
 
-        return m_buffers[m_frame_index];
+        return cmd;
     }
 
-    auto Command::end() -> void
+    auto Command::end(VkCommandBuffer cmd) -> void
     {
-        VK_CHECK(vkEndCommandBuffer(m_buffers[m_frame_index]));
+        VK_CHECK(vkEndCommandBuffer(cmd));
     }
 
 }

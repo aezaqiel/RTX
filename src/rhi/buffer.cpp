@@ -64,11 +64,19 @@ namespace RHI {
         m_mapped = false;
     }
 
-    auto Buffer::upload(const void* data, u64 size, u64 offset) -> void
+    auto Buffer::write(const void* data, u64 size, u64 offset) -> void
     {
         std::byte* ptr = map();
         std::memcpy(ptr + offset, data, size);
         unmap();
+    }
+
+    auto Buffer::stage(VkCommandBuffer cmd, Buffer& staging) -> void
+    {
+        RHI::Buffer::copy(cmd, staging, *this, m_size,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT 
+        );
     }
 
     auto Buffer::copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, u64 size,

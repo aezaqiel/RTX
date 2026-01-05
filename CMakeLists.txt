@@ -42,6 +42,8 @@ add_executable(${PROJECT_NAME}
     src/rhi/buffer.cpp
     src/rhi/image.hpp
     src/rhi/image.cpp
+    src/rhi/acceleration_structure.hpp
+    src/rhi/acceleration_structure.cpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp

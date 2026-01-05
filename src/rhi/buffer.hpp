@@ -22,7 +22,9 @@ namespace RHI {
         auto map() -> std::byte*;
         auto unmap() -> void;
 
-        auto upload(const void* data, u64 size, u64 offset = 0) -> void;
+        auto write(const void* data, u64 size, u64 offset = 0) -> void;
+
+        auto stage(VkCommandBuffer cmd, Buffer& staging) -> void;
 
         static auto copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, u64 size,
             VkPipelineStageFlags2 src_stage,

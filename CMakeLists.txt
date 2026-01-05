@@ -40,6 +40,8 @@ add_executable(${PROJECT_NAME}
     src/rhi/command.cpp
     src/rhi/buffer.hpp
     src/rhi/buffer.cpp
+    src/rhi/image.hpp
+    src/rhi/image.cpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp

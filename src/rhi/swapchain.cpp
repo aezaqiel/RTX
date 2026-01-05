@@ -166,34 +166,12 @@ namespace RHI {
 
     auto Swapchain::create_resources() -> void
     {
+        std::vector<VkImage> images(m_image_count);
+        vkGetSwapchainImagesKHR(m_device->device(), m_swapchain, &m_image_count, images.data());
+
         m_images.resize(m_image_count);
-        m_image_views.resize(m_image_count);
         m_image_acquired_semaphores.resize(m_image_count);
         m_present_signal_semaphores.resize(m_image_count);
-
-        vkGetSwapchainImagesKHR(m_device->device(), m_swapchain, &m_image_count, m_images.data());
-
-        VkImageViewCreateInfo view_info {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .image = VK_NULL_HANDLE,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = m_surface_format.format,
-            .components = {
-                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .a = VK_COMPONENT_SWIZZLE_IDENTITY
-            },
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            }
-        };
 
         VkSemaphoreCreateInfo semaphore_info {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -202,9 +180,7 @@ namespace RHI {
         };
 
         for (usize i = 0; i < m_images.size(); ++i) {
-            view_info.image = m_images[i];
-
-            VK_CHECK(vkCreateImageView(m_device->device(), &view_info, nullptr, &m_image_views[i]));
+            m_images[i] = std::make_unique<Image>(m_device, images[i], VkExtent3D { width(), height(), 1 }, m_surface_format.format);
             VK_CHECK(vkCreateSemaphore(m_device->device(), &semaphore_info, nullptr, &m_image_acquired_semaphores[i]));
             VK_CHECK(vkCreateSemaphore(m_device->device(), &semaphore_info, nullptr, &m_present_signal_semaphores[i]));
         }
@@ -215,7 +191,6 @@ namespace RHI {
         for (u32 i = 0; i < m_image_count; ++i) {
             vkDestroySemaphore(m_device->device(), m_present_signal_semaphores[i], nullptr);
             vkDestroySemaphore(m_device->device(), m_image_acquired_semaphores[i], nullptr);
-            vkDestroyImageView(m_device->device(), m_image_views[i], nullptr);
         }
     }
 

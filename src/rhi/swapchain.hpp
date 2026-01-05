@@ -3,6 +3,7 @@
 #include "vk_types.hpp"
 #include "context.hpp"
 #include "device.hpp"
+#include "image.hpp"
 
 namespace RHI {
 
@@ -25,7 +26,7 @@ namespace RHI {
         [[nodiscard]] auto surface_format() const -> VkSurfaceFormatKHR { return m_surface_format; }
         [[nodiscard]] auto present_mode() const -> VkPresentModeKHR { return m_present_mode; }
 
-        [[nodiscard]] auto current_image() const -> VkImage { return m_images.at(m_image_index); }
+        [[nodiscard]] auto current_image() const -> const Image& { return *m_images[m_image_index]; }
 
         auto recreate(VkExtent2D request) -> void;
 
@@ -51,8 +52,7 @@ namespace RHI {
         VkExtent2D m_extent { 0, 0 };
 
         u32 m_image_count { 0 };
-        std::vector<VkImage> m_images;
-        std::vector<VkImageView> m_image_views;
+        std::vector<std::unique_ptr<Image>> m_images;
 
         std::vector<VkSemaphore> m_image_acquired_semaphores;
         std::vector<VkSemaphore> m_present_signal_semaphores;

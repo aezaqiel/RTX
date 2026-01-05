@@ -9,9 +9,8 @@
 #include "rhi/device.hpp"
 #include "rhi/swapchain.hpp"
 #include "rhi/queue.hpp"
-
 #include "rhi/command.hpp"
-#include "rhi/sync.hpp"
+
 #include "rhi/buffer.hpp"
 
 #include "scene/loader.hpp"
@@ -34,8 +33,6 @@ auto main() -> i32
     glfwSetErrorCallback([](i32 code, const char* desc) {
         std::println(std::cerr, "glfw error ({}): {}", code, desc);
     });
-
-    std::println("creating window");
 
     glfwInit();
 
@@ -66,30 +63,27 @@ auto main() -> i32
         data.height = static_cast<u32>(height);
     });
 
-    std::println("creating vulkan context");
     auto context = std::make_shared<RHI::Context>(window);
-
-    std::println("creating vulkan device && queues");
     auto device = std::make_shared<RHI::Device>(context);
+
+    auto swapchain = std::make_unique<RHI::Swapchain>(context, device, VkExtent2D { window_data.width, window_data.height });
+
+    std::println("creating command contexts");
 
     auto graphics_queue = std::make_unique<RHI::Queue>(device, device->graphics_index());
     auto compute_queue  = std::make_unique<RHI::Queue>(device, device->compute_index());
     auto transfer_queue = std::make_unique<RHI::Queue>(device, device->transfer_index());
 
-    std::println("creating vulkan swapchain");
-    auto swapchain = std::make_unique<RHI::Swapchain>(context, device, VkExtent2D { window_data.width, window_data.height });
+    auto graphics_command = std::make_unique<RHI::Command>(device, device->graphics_index(), FRAMES_IN_FLIGHT);
+    auto compute_command = std::make_unique<RHI::Command>(device, device->compute_index(), FRAMES_IN_FLIGHT);
+    auto transfer_command = std::make_unique<RHI::Command>(device, device->transfer_index(), FRAMES_IN_FLIGHT);
 
-    std::println("creating command contexts");
+    std::string model_filename = "assets/sponza/sponza.obj";
 
-    CommandContext compute_command = CommandContext::create(device->device(), device->compute_index());
+    std::println("loading {}", model_filename);
+    auto model = Loader::load_obj(model_filename);
 
-    std::println("loading model");
-
-    auto model = Loader::load_obj("assets/sponza/sponza.obj");
-
-    std::println("Model loaded: {} triangles", model.mesh->positions.size() / 3);
-
-    std::println("uploading model and building AS");
+    std::println("creating primitives for model");
 
     usize vertex_size = model.mesh->positions.size() * sizeof(glm::vec3);
     usize index_size = model.mesh->indices.size() * sizeof(u32);
@@ -283,7 +277,9 @@ auto main() -> i32
 
     const VkAccelerationStructureBuildRangeInfoKHR* p_tlas_range_info = &tlas_range_info;
 
-    compute_command.record(device->device(), [&](VkCommandBuffer cmd) {
+    compute_command->reset(); // do we need this?
+
+    auto build_cmd = compute_command->record([&](VkCommandBuffer cmd) {
         Buffer::copy(cmd, vertex_staging, vertex_buffer, vertex_size);
         Buffer::copy(cmd, index_staging, index_buffer, index_size);
 
@@ -338,22 +334,11 @@ auto main() -> i32
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &tlas_build_info, &p_tlas_range_info);
     });
 
+    std::println("uploading model and building AS");
 
     std::vector<VkSemaphoreSubmitInfo> as_waits;
     std::vector<VkSemaphoreSubmitInfo> as_signals;
-    compute_queue->submit(compute_command.buffer, as_waits, as_signals);
-
-    std::println("creating frame resources");
-
-    std::array<FrameContext, FRAMES_IN_FLIGHT> frames;
-    for (auto& frame : frames) {
-        frame = FrameContext::create(device->device(),
-            device->graphics_index(),
-            device->compute_index()
-        );
-    }
-    
-    std::println("sync AS build");
+    compute_queue->submit(build_cmd, as_waits, as_signals);
     compute_queue->sync();
 
     tlas_scratch.destroy(device->allocator());
@@ -367,8 +352,6 @@ auto main() -> i32
     vertex_buffer.destroy(device->allocator());
     index_buffer.destroy(device->allocator());
 
-    compute_command.destroy(device->device());
-
     std::println("render loop start");
 
     u64 frame_count = 0;
@@ -381,26 +364,33 @@ auto main() -> i32
         }
 
         if (!g_running) break;
+
+        // sync frames in flight
         
-        FrameContext& frame = frames[frame_count % FRAMES_IN_FLIGHT];
         if (frame_count >= FRAMES_IN_FLIGHT) {
             u64 wait_value = frame_count - FRAMES_IN_FLIGHT + 1;
             graphics_queue->sync(wait_value);
         }
+
+        // reset command pools
+
+        graphics_command->reset();
+        compute_command->reset();
+        transfer_command->reset();
+
+        // acquire swapchain image
 
         if (!swapchain->acquire_image()) {
             swapchain->recreate(VkExtent2D { window_data.width, window_data.height });
             continue;
         }
 
-        frame.compute.record(device->device(), [&](VkCommandBuffer cmd) {
+        // record commands
+
+        auto compute_cmd = compute_command->record([&](VkCommandBuffer cmd) {
         });
 
-        std::vector<VkSemaphoreSubmitInfo> compute_waits;
-        std::vector<VkSemaphoreSubmitInfo> compute_signals;
-        u64 compute_signal_value = compute_queue->submit(frame.compute.buffer, compute_waits, compute_signals);
-
-        frame.graphics.record(device->device(), [&](VkCommandBuffer cmd) {
+        auto graphics_cmd = graphics_command->record([&](VkCommandBuffer cmd) {
             VkImageMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .pNext = nullptr,
@@ -437,6 +427,12 @@ auto main() -> i32
             vkCmdPipelineBarrier2(cmd, &dependency);
         });
 
+        // submit commands
+
+        std::vector<VkSemaphoreSubmitInfo> compute_waits;
+        std::vector<VkSemaphoreSubmitInfo> compute_signals;
+        u64 compute_signal_value = compute_queue->submit(compute_cmd, compute_waits, compute_signals);
+
         std::vector<VkSemaphoreSubmitInfo> graphics_waits {
             swapchain->acquire_wait_info(),
             compute_queue->wait_info()
@@ -446,7 +442,9 @@ auto main() -> i32
             swapchain->present_signal_info()
         };
 
-        u64 graphics_signal_value = graphics_queue->submit(frame.graphics.buffer, graphics_waits, graphics_signals);
+        u64 graphics_signal_value = graphics_queue->submit(graphics_cmd, graphics_waits, graphics_signals);
+
+        // swapchain present
 
         if (!swapchain->present(graphics_queue->queue())) {
             swapchain->recreate(VkExtent2D { window_data.width, window_data.height });
@@ -456,10 +454,6 @@ auto main() -> i32
     }
 
     vkDeviceWaitIdle(device->device());
-
-    for (auto& frame : frames) {
-        frame.destroy(device->device());
-    }
 
     vkDestroyAccelerationStructureKHR(device->device(), tlas, nullptr);
     tlas_buffer.destroy(device->allocator());

@@ -1,76 +1,27 @@
 #pragma once
 
 #include "vk_types.hpp"
+#include "device.hpp"
 
-struct CommandContext
-{
-    VkCommandPool pool;
-    VkCommandBuffer buffer;
+namespace RHI {
 
-    static auto create(VkDevice device, u32 queue_index) -> CommandContext
+    class Command
     {
-        CommandContext context;
+    public:
+        Command(const std::shared_ptr<Device>& device, u32 queue_index, usize frames_in_flight);
+        ~Command();
 
-        VkCommandPoolCreateInfo pool_info {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-            .queueFamilyIndex = queue_index
-        };
-        VK_CHECK(vkCreateCommandPool(device, &pool_info, nullptr, &context.pool));
+        auto reset(VkCommandPoolResetFlags flags = 0) -> void;
+        auto record(std::function<void(VkCommandBuffer)>&& func) -> VkCommandBuffer;
 
-        VkCommandBufferAllocateInfo buffer_allocation {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .commandPool = context.pool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1
-        };
-        VK_CHECK(vkAllocateCommandBuffers(device, &buffer_allocation, &context.buffer));
+    private:
+        std::shared_ptr<Device> m_device;
 
-        return context;
-    }
+        usize m_frames_in_flight { 0 };
+        usize m_frame_index { 0 };
 
-    auto destroy(VkDevice device) -> void
-    {
-        vkResetCommandPool(device, pool, 0);
-        vkDestroyCommandPool(device, pool, nullptr);
-    }
+        std::vector<VkCommandPool> m_pools;
+        std::vector<VkCommandBuffer> m_buffers;
+    };
 
-    auto record(VkDevice device, std::function<void(VkCommandBuffer)>&& function) -> void
-    {
-        VK_CHECK(vkResetCommandPool(device, pool, 0));
-
-        VkCommandBufferBeginInfo begin_info {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .pInheritanceInfo = nullptr
-        };
-
-        VK_CHECK(vkBeginCommandBuffer(buffer, &begin_info));
-        function(buffer);
-        VK_CHECK(vkEndCommandBuffer(buffer));
-    }
-
-    // NOT OPTIMAL
-    auto execute(VkDevice device, VkQueue queue, std::function<void(VkCommandBuffer)>&& function) -> void
-    {
-        record(device, std::move(function));
-
-        VkSubmitInfo submit {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = nullptr,
-            .pWaitDstStageMask = nullptr,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &buffer,
-            .signalSemaphoreCount = 0,
-            .pSignalSemaphores = nullptr
-        };
-
-        vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queue);
-    }
-};
+}

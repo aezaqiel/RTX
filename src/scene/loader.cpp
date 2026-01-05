@@ -87,7 +87,7 @@ auto Loader::load_obj(const std::string& filename) -> Model
     mesh->indices = indices;
     mesh->attributes = attributes;
 
-    std::println("loaded model: {}, ({} vertices)", filename, positions.size());
+    std::println("loaded model: {} ({} vertices)", filename, positions.size());
 
     return Model { .mesh = std::move(mesh) };
 }

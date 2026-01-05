@@ -38,8 +38,8 @@ add_executable(${PROJECT_NAME}
     src/rhi/queue.cpp
     src/rhi/command.hpp
     src/rhi/command.cpp
-
     src/rhi/buffer.hpp
+    src/rhi/buffer.cpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp

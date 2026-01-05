@@ -1,122 +1,46 @@
 #pragma once
 
 #include "vk_types.hpp"
+#include "device.hpp"
 
-struct Buffer
-{
-    VkBuffer handle { VK_NULL_HANDLE };
-    VmaAllocation allocation { VK_NULL_HANDLE };
-    VkDeviceAddress address { 0 };
-    VkDeviceSize size { 0 };
+namespace RHI {
 
-    static auto create(VmaAllocator allocator, VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage, VmaAllocationCreateFlags alloc_flags = 0) -> Buffer
+    class Buffer
     {
-        Buffer buffer;
-        buffer.size = size;
+    public:
+        Buffer(const std::shared_ptr<Device>& device, u64 size, VkBufferUsageFlags buffer_usage, VmaMemoryUsage memory_usage, VmaAllocationCreateFlags allocation_flags = 0);
+        ~Buffer();
 
-        usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        Buffer(const Buffer&) = delete;
+        Buffer& operator=(const Buffer&) = delete;
 
-        VkBufferCreateInfo buffer_info {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = size,
-            .usage = usage,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr
-        };
+        [[nodiscard]] auto buffer() const -> VkBuffer { return m_buffer; }
+        [[nodiscard]] auto size() const -> u64 { return m_size; }
 
-        VmaAllocationCreateInfo alloc_info {
-            .flags = alloc_flags,
-            .usage = memory_usage,
-        };
+        auto address() const -> u64;
 
-        VK_CHECK(vmaCreateBuffer(allocator, &buffer_info, &alloc_info, &buffer.handle, &buffer.allocation, nullptr));
+        auto map() -> std::byte*;
+        auto unmap() -> void;
 
-        VkBufferDeviceAddressInfo address_info {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-            .pNext = nullptr,
-            .buffer = buffer.handle
-        };
+        auto upload(const void* data, u64 size, u64 offset = 0) -> void;
 
-        buffer.address = vkGetBufferDeviceAddress(volkGetLoadedDevice(), &address_info);
+        static auto copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, u64 size,
+            VkPipelineStageFlags2 src_stage,
+            VkPipelineStageFlags2 dst_stage,
+            VkAccessFlags2 src_access,
+            VkAccessFlags2 dst_access
+        ) -> void;
 
-        return buffer;
-    }
+    private:
+        std::shared_ptr<Device> m_device;
 
-    static auto create_staging(VmaAllocator allocator, VkDeviceSize size, const void* data = nullptr) -> Buffer
-    {
-        Buffer buffer = create(
-            allocator, 
-            size, 
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
-            VMA_MEMORY_USAGE_AUTO, 
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
+        VkBuffer m_buffer { VK_NULL_HANDLE };
 
-        if (data) {
-            buffer.upload(allocator, data, size);
-        }
+        VmaAllocation m_allocation { VK_NULL_HANDLE };
+        VmaAllocationInfo m_info;
 
-        return buffer;
-    }
+        u64 m_size { 0 };
+        bool m_mapped { false };
+    };
 
-    static auto create_aligned(VmaAllocator allocator, VkDeviceSize size, u32 alignment, VkBufferUsageFlags usage, VmaMemoryUsage memory_usage, VmaAllocationCreateFlags alloc_flags = 0) -> Buffer
-    {
-        VkDeviceSize aligned_size = (size + alignment - 1) & ~(alignment - 1);
-
-        return create(
-            allocator, 
-            aligned_size, 
-            usage,
-            memory_usage,
-            alloc_flags
-        );
-    }
-
-    auto destroy(VmaAllocator allocator) -> void
-    {
-        if (handle) {
-            vmaDestroyBuffer(allocator, handle, allocation);
-            handle = VK_NULL_HANDLE;
-            allocation = VK_NULL_HANDLE;
-        }
-    }
-
-    auto upload(VmaAllocator allocator, const void* data, VkDeviceSize copy_size) -> void
-    {
-        void* mapped_data;
-        VK_CHECK(vmaMapMemory(allocator, allocation, &mapped_data));
-        std::memcpy(mapped_data, data, copy_size);
-        vmaUnmapMemory(allocator, allocation);
-    }
-
-    static auto copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, VkDeviceSize size) -> void
-    {
-        VkBufferCopy region { .srcOffset = 0, .dstOffset = 0, .size = size };
-        vkCmdCopyBuffer(cmd, src.handle, dst.handle, 1, &region);
-        
-        VkBufferMemoryBarrier2 barrier {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // Read-only input for build
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = dst.handle,
-            .offset = 0,
-            .size = size
-        };
-
-        VkDependencyInfo dep {
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .bufferMemoryBarrierCount = 1,
-            .pBufferMemoryBarriers = &barrier
-        };
-
-        vkCmdPipelineBarrier2(cmd, &dep);
-    }
-
-};
+}

@@ -139,7 +139,7 @@ namespace RHI {
         return false;
     }
 
-    auto Swapchain::present() -> bool
+    auto Swapchain::present(VkQueue queue) -> bool
     {
         VkPresentInfoKHR present_info {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -152,7 +152,7 @@ namespace RHI {
             .pResults = nullptr
         };
 
-        VkResult result = vkQueuePresentKHR(m_device->graphics_queue(), &present_info);
+        VkResult result = vkQueuePresentKHR(queue, &present_info);
 
         m_sync_index = (m_sync_index + 1) % m_image_count;
 

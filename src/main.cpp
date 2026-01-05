@@ -8,6 +8,8 @@
 #include "rhi/context.hpp"
 #include "rhi/device.hpp"
 #include "rhi/swapchain.hpp"
+#include "rhi/queue.hpp"
+
 #include "rhi/command.hpp"
 #include "rhi/sync.hpp"
 #include "rhi/buffer.hpp"
@@ -67,16 +69,17 @@ auto main() -> i32
     std::println("creating vulkan context");
     auto context = std::make_shared<RHI::Context>(window);
 
-    std::println("creating vulkan device");
+    std::println("creating vulkan device && queues");
     auto device = std::make_shared<RHI::Device>(context);
+
+    auto graphics_queue = std::make_unique<RHI::Queue>(device, device->graphics_index());
+    auto compute_queue  = std::make_unique<RHI::Queue>(device, device->compute_index());
+    auto transfer_queue = std::make_unique<RHI::Queue>(device, device->transfer_index());
 
     std::println("creating vulkan swapchain");
     auto swapchain = std::make_unique<RHI::Swapchain>(context, device, VkExtent2D { window_data.width, window_data.height });
 
-    std::println("creating command and sync primitives");
-
-    QueueSync graphics_sync = QueueSync::create(device->device(), device->graphics_queue());
-    QueueSync compute_sync = QueueSync::create(device->device(), device->compute_queue());
+    std::println("creating command contexts");
 
     CommandContext compute_command = CommandContext::create(device->device(), device->compute_index());
 
@@ -335,9 +338,10 @@ auto main() -> i32
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &tlas_build_info, &p_tlas_range_info);
     });
 
+
     std::vector<VkSemaphoreSubmitInfo> as_waits;
     std::vector<VkSemaphoreSubmitInfo> as_signals;
-    u64 as_signal_value = compute_sync.submit(device->device(), compute_command.buffer, as_waits, as_signals);
+    compute_queue->submit(compute_command.buffer, as_waits, as_signals);
 
     std::println("creating frame resources");
 
@@ -350,17 +354,7 @@ auto main() -> i32
     }
     
     std::println("sync AS build");
-
-    VkSemaphoreWaitInfo as_wait_info {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .semaphoreCount = 1,
-        .pSemaphores = &compute_sync.timeline,
-        .pValues = &as_signal_value
-    };
-
-    VK_CHECK(vkWaitSemaphores(device->device(), &as_wait_info, std::numeric_limits<u64>::max()));
+    compute_queue->sync();
 
     tlas_scratch.destroy(device->allocator());
     instance_buffer.destroy(device->allocator());
@@ -391,17 +385,7 @@ auto main() -> i32
         FrameContext& frame = frames[frame_count % FRAMES_IN_FLIGHT];
         if (frame_count >= FRAMES_IN_FLIGHT) {
             u64 wait_value = frame_count - FRAMES_IN_FLIGHT + 1;
-
-            VkSemaphoreWaitInfo wait_info {
-                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .semaphoreCount = 1,
-                .pSemaphores = &graphics_sync.timeline,
-                .pValues = &wait_value
-            };
-
-            VK_CHECK(vkWaitSemaphores(device->device(), &wait_info, std::numeric_limits<u64>::max()));
+            graphics_queue->sync(wait_value);
         }
 
         if (!swapchain->acquire_image()) {
@@ -414,7 +398,7 @@ auto main() -> i32
 
         std::vector<VkSemaphoreSubmitInfo> compute_waits;
         std::vector<VkSemaphoreSubmitInfo> compute_signals;
-        u64 compute_signal_value = compute_sync.submit(device->device(), frame.compute.buffer, compute_waits, compute_signals);
+        u64 compute_signal_value = compute_queue->submit(frame.compute.buffer, compute_waits, compute_signals);
 
         frame.graphics.record(device->device(), [&](VkCommandBuffer cmd) {
             VkImageMemoryBarrier2 barrier {
@@ -455,16 +439,16 @@ auto main() -> i32
 
         std::vector<VkSemaphoreSubmitInfo> graphics_waits {
             swapchain->acquire_wait_info(),
-            compute_sync.wait_info()
+            compute_queue->wait_info()
         };
 
         std::vector<VkSemaphoreSubmitInfo> graphics_signals {
             swapchain->present_signal_info()
         };
 
-        u64 graphics_signal_value = graphics_sync.submit(device->device(), frame.graphics.buffer, graphics_waits, graphics_signals);
+        u64 graphics_signal_value = graphics_queue->submit(frame.graphics.buffer, graphics_waits, graphics_signals);
 
-        if (!swapchain->present()) {
+        if (!swapchain->present(graphics_queue->queue())) {
             swapchain->recreate(VkExtent2D { window_data.width, window_data.height });
         }
 
@@ -476,9 +460,6 @@ auto main() -> i32
     for (auto& frame : frames) {
         frame.destroy(device->device());
     }
-
-    graphics_sync.destroy(device->device());
-    compute_sync.destroy(device->device());
 
     vkDestroyAccelerationStructureKHR(device->device(), tlas, nullptr);
     tlas_buffer.destroy(device->allocator());

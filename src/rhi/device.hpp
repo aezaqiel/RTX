@@ -29,10 +29,6 @@ namespace RHI {
         [[nodiscard]] auto compute_index()  const -> u32 { return m_queue_indices.compute;  }
         [[nodiscard]] auto transfer_index() const -> u32 { return m_queue_indices.transfer; }
 
-        [[nodiscard]] auto graphics_queue() const -> VkQueue { return m_graphics; }
-        [[nodiscard]] auto compute_queue()  const -> VkQueue { return m_compute;  }
-        [[nodiscard]] auto transfer_queue() const -> VkQueue { return m_transfer; }
-
         [[nodiscard]] auto props()    const -> VkPhysicalDeviceProperties { return m_props.properties; }
         [[nodiscard]] auto as_props() const -> VkPhysicalDeviceAccelerationStructurePropertiesKHR { return m_as_props; }
         [[nodiscard]] auto rt_props() const -> VkPhysicalDeviceRayTracingPipelinePropertiesKHR { return m_rt_props; }
@@ -47,9 +43,6 @@ namespace RHI {
         VmaAllocator m_allocator { VK_NULL_HANDLE };
 
         QueueFamilyIndices m_queue_indices;
-        VkQueue m_graphics;
-        VkQueue m_compute;
-        VkQueue m_transfer;
 
         VkPhysicalDeviceProperties2 m_props;
         VkPhysicalDeviceAccelerationStructurePropertiesKHR m_as_props;

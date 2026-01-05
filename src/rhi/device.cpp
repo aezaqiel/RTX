@@ -199,10 +199,6 @@ namespace RHI {
 
         VK_CHECK(vmaCreateAllocator(&allocator_info, &m_allocator));
 
-        vkGetDeviceQueue(m_device, m_queue_indices.graphics, 0, &m_graphics);
-        vkGetDeviceQueue(m_device, m_queue_indices.compute, 0, &m_compute);
-        vkGetDeviceQueue(m_device, m_queue_indices.transfer, 0, &m_transfer);
-
         std::println("device extensions:");
         for (const auto& extension : extensions) {
             std::println(" - {}", extension);

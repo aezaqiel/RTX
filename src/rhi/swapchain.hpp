@@ -33,7 +33,7 @@ namespace RHI {
         auto present_signal_info() const -> VkSemaphoreSubmitInfo;
 
         auto acquire_image() -> bool;
-        auto present() -> bool;
+        auto present(VkQueue queue) -> bool;
 
     private:
         auto create_resources() -> void;

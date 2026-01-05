@@ -34,6 +34,9 @@ add_executable(${PROJECT_NAME}
     src/rhi/device.cpp
     src/rhi/swapchain.hpp
     src/rhi/swapchain.cpp
+    src/rhi/queue.hpp
+    src/rhi/queue.cpp
+
     src/rhi/command.hpp
     src/rhi/sync.hpp
     src/rhi/buffer.hpp

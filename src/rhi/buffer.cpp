@@ -71,22 +71,22 @@ namespace RHI {
         unmap();
     }
 
-    auto Buffer::stage(VkCommandBuffer cmd, Buffer& staging) -> void
+    auto Buffer::stage(VkCommandBuffer cmd, Buffer& staging, VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, VkAccessFlags2 access = VK_ACCESS_2_TRANSFER_WRITE_BIT) -> void
     {
-        RHI::Buffer::copy(cmd, staging, *this, m_size,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_ACCESS_2_TRANSFER_READ_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT 
+        RHI::Buffer::copy(cmd, staging, *this,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, stage,
+            VK_ACCESS_2_TRANSFER_READ_BIT, access
         );
     }
 
-    auto Buffer::copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, u64 size,
+    auto Buffer::copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst,
         VkPipelineStageFlags2 src_stage,
         VkPipelineStageFlags2 dst_stage,
         VkAccessFlags2 src_access,
         VkAccessFlags2 dst_access
     ) -> void
     {
-        VkBufferCopy region { .srcOffset = 0, .dstOffset = 0, .size = size };
+        VkBufferCopy region { .srcOffset = 0, .dstOffset = 0, .size = dst.size() };
         vkCmdCopyBuffer(cmd, src.buffer(), dst.buffer(), 1, &region);
 
         VkBufferMemoryBarrier2 barrier {
@@ -99,7 +99,7 @@ namespace RHI {
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .buffer = dst.buffer(),
             .offset = 0,
-            .size = size
+            .size = dst.size()
         };
 
         VkDependencyInfo dependency {

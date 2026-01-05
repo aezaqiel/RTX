@@ -131,51 +131,15 @@ auto main() -> i32
 
         auto as_cmd = compute_command->begin();
         {
-            vertex_buffer.stage(as_cmd, vertex_staging);
-            index_buffer.stage(as_cmd, index_staging);
+            vertex_buffer.stage(as_cmd, vertex_staging,
+                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
+            );
 
-            std::array<VkBufferMemoryBarrier2, 2> upload_barriers = {
-                VkBufferMemoryBarrier2 {
-                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                    .pNext = nullptr,
-                    .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                    .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                    .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                    .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .buffer = vertex_buffer.buffer(),
-                    .offset = 0,
-                    .size = vertex_buffer.size()
-                },
-                VkBufferMemoryBarrier2 {
-                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                    .pNext = nullptr,
-                    .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                    .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                    .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                    .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                    .buffer = index_buffer.buffer(),
-                    .offset = 0,
-                    .size = index_buffer.size()
-                }
-            };
-
-            VkDependencyInfo upload_dependency {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext = nullptr,
-                .dependencyFlags = 0,
-                .memoryBarrierCount = 0,
-                .pMemoryBarriers = nullptr,
-                .bufferMemoryBarrierCount = static_cast<u32>(upload_barriers.size()),
-                .pBufferMemoryBarriers = upload_barriers.data(),
-                .imageMemoryBarrierCount = 0,
-                .pImageMemoryBarriers = nullptr
-            };
-
-            vkCmdPipelineBarrier2(as_cmd, &upload_dependency);
+            index_buffer.stage(as_cmd, index_staging,
+                VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
+            );
 
             blas->build(as_cmd);
             tlas->build(as_cmd);

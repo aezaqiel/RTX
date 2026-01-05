@@ -24,9 +24,9 @@ namespace RHI {
 
         auto write(const void* data, u64 size, u64 offset = 0) -> void;
 
-        auto stage(VkCommandBuffer cmd, Buffer& staging) -> void;
+        auto stage(VkCommandBuffer cmd, Buffer& staging, VkPipelineStageFlags2 stage, VkAccessFlags2 access) -> void;
 
-        static auto copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst, u64 size,
+        static auto copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst,
             VkPipelineStageFlags2 src_stage,
             VkPipelineStageFlags2 dst_stage,
             VkAccessFlags2 src_access,

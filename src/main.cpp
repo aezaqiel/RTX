@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "rhi/context.hpp"
+#include "rhi/device.hpp"
 #include "rhi/command.hpp"
 #include "rhi/sync.hpp"
 #include "rhi/buffer.hpp"
@@ -41,226 +42,10 @@ auto main() -> i32
     }
 
     std::println("creating vulkan instance");
-
     auto context = std::make_shared<RHI::Context>(window);
 
-    std::println("choosing physical device");
-
-    VkPhysicalDevice physical_device;
-
-    u32 graphics_queue_index = 0;
-    u32 compute_queue_index  = 0;
-    u32 transfer_queue_index = 0;
-
-    VkPhysicalDeviceAccelerationStructurePropertiesKHR as_props {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
-    };
-
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_props {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR,
-        .pNext = &as_props
-    };
-
-    VkPhysicalDeviceProperties2 device_props {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &rt_props
-    };
-
-    { // physical device selection
-        u32 device_count = 0;
-        vkEnumeratePhysicalDevices(context->instance(), &device_count, nullptr);
-        std::vector<VkPhysicalDevice> available_devices(device_count);
-        vkEnumeratePhysicalDevices(context->instance(), &device_count, available_devices.data());
-
-        for (const auto& device : available_devices) {
-            VkPhysicalDeviceProperties props;
-            vkGetPhysicalDeviceProperties(device, &props);
-
-            if (!(props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)) {
-                continue;
-            }
-
-            u32 queue_count = 0;
-            vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, nullptr);
-            std::vector<VkQueueFamilyProperties> available_queues(queue_count);
-            vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_count, available_queues.data());
-
-            std::optional<u32> graphics;
-            std::optional<u32> compute;
-            std::optional<u32> transfer;
-
-            u32 queue_index = 0;
-            for (const auto& queue : available_queues) {
-                VkBool32 present = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(device, queue_index, context->surface(), &present);
-
-                if ((queue.queueFlags & VK_QUEUE_GRAPHICS_BIT) && present == VK_TRUE) {
-                    if (!graphics.has_value()) graphics = queue_index;
-                }
-
-                if ((queue.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(queue.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-                    if (!compute.has_value()) compute = queue_index;
-                }
-
-                if ((queue.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(queue.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(queue.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-                    if (!transfer.has_value()) transfer = queue_index;
-                }
-
-                queue_index++;
-            }
-
-            if (graphics.has_value() && compute.has_value() && transfer.has_value()) {
-                physical_device = device;
-
-                graphics_queue_index = graphics.value();
-                compute_queue_index = compute.value();
-                transfer_queue_index = transfer.value();
-
-                vkGetPhysicalDeviceProperties2(physical_device, &device_props);
-
-                std::println("physical device : {}", device_props.properties.deviceName);
-                std::println("graphics queue index : {}", graphics_queue_index);
-                std::println("compute queue index  : {}", compute_queue_index);
-                std::println("transfer queue index : {}", transfer_queue_index);
-
-                break;
-            }
-        }
-    }
-
     std::println("creating vulkan device");
-
-    VkDevice device;
-    VmaAllocator allocator;
-
-    VkQueue graphics_queue;
-    VkQueue compute_queue;
-    VkQueue transfer_queue;
-
-    { // device creation
-        std::set<u32> indices { graphics_queue_index, compute_queue_index, transfer_queue_index };
-
-        std::vector<VkDeviceQueueCreateInfo> queue_infos;
-        queue_infos.reserve(indices.size());
-
-        for (u32 index : indices) {
-            f32 priority = 1.0f;
-            queue_infos.push_back(VkDeviceQueueCreateInfo {
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .queueFamilyIndex = index,
-                .queueCount = 1,
-                .pQueuePriorities = &priority
-            });
-        }
-
-        VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_features {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-            .pNext = nullptr,
-            .rayTracingPipeline = VK_TRUE,
-            .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
-            .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
-            .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
-            .rayTraversalPrimitiveCulling = VK_FALSE
-        };
-
-        VkPhysicalDeviceAccelerationStructureFeaturesKHR as_features {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-            .pNext = &rt_features,
-            .accelerationStructure = VK_TRUE,
-            .accelerationStructureCaptureReplay = VK_FALSE,
-            .accelerationStructureIndirectBuild = VK_FALSE,
-            .accelerationStructureHostCommands = VK_FALSE,
-            .descriptorBindingAccelerationStructureUpdateAfterBind = VK_FALSE
-        };
-
-        VkPhysicalDeviceVulkan14Features features14 {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
-            .pNext = &as_features,
-            .pushDescriptor = VK_TRUE
-        };
-
-        VkPhysicalDeviceVulkan13Features features13 {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-            .pNext = &features14,
-            .synchronization2 = VK_TRUE,
-            .dynamicRendering = VK_TRUE
-        };
-
-        VkPhysicalDeviceVulkan12Features features12 {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-            .pNext = &features13,
-            .scalarBlockLayout = VK_TRUE,
-            .timelineSemaphore = VK_TRUE,
-            .bufferDeviceAddress = VK_TRUE
-        };
-
-        VkPhysicalDeviceVulkan11Features features11 {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-            .pNext = &features12
-        };
-
-        VkPhysicalDeviceFeatures2 features {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-            .pNext = &features11,
-            .features = {
-                .samplerAnisotropy = VK_TRUE
-            }
-        };
-
-        std::vector<const char*> extensions {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME
-        };
-
-        VkDeviceCreateInfo device_info {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &features,
-            .flags = 0,
-            .queueCreateInfoCount = static_cast<u32>(queue_infos.size()),
-            .pQueueCreateInfos = queue_infos.data(),
-            .enabledLayerCount = 0,
-            .ppEnabledLayerNames = nullptr,
-            .enabledExtensionCount = static_cast<u32>(extensions.size()),
-            .ppEnabledExtensionNames = extensions.data(),
-            .pEnabledFeatures = nullptr
-        };
-
-        VK_CHECK(vkCreateDevice(physical_device, &device_info, nullptr, &device));
-        volkLoadDevice(device);
-
-        VmaAllocatorCreateInfo allocator_info {
-            .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-            .physicalDevice = physical_device,
-            .device = device,
-            .preferredLargeHeapBlockSize = 0,
-            .pAllocationCallbacks = nullptr,
-            .pDeviceMemoryCallbacks = nullptr,
-            .pHeapSizeLimit = nullptr,
-            .pVulkanFunctions = nullptr,
-            .instance = context->instance(),
-            .vulkanApiVersion = VK_API_VERSION_1_4
-        };
-
-        VmaVulkanFunctions vma_funcs;
-        vmaImportVulkanFunctionsFromVolk(&allocator_info, &vma_funcs);
-
-        allocator_info.pVulkanFunctions = &vma_funcs;
-
-        VK_CHECK(vmaCreateAllocator(&allocator_info, &allocator));
-
-        vkGetDeviceQueue(device, graphics_queue_index, 0, &graphics_queue);
-        vkGetDeviceQueue(device, compute_queue_index, 0, &compute_queue);
-        vkGetDeviceQueue(device, transfer_queue_index, 0, &transfer_queue);
-
-        std::println("device extensions:");
-        for (const auto& extension : extensions) {
-            std::println(" - {}", extension);
-        }
-    }
+    auto device = std::make_shared<RHI::Device>(context);
 
     std::println("query swapchain details");
 
@@ -270,12 +55,12 @@ auto main() -> i32
     VkExtent2D extent;
 
     { // swapchain details
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, context->surface(), &surface_caps);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->physical(), context->surface(), &surface_caps);
 
         u32 format_count = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, context->surface(), &format_count, nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device->physical(), context->surface(), &format_count, nullptr);
         std::vector<VkSurfaceFormatKHR> available_formats(format_count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, context->surface(), &format_count, available_formats.data());
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device->physical(), context->surface(), &format_count, available_formats.data());
 
         surface_format = available_formats[0];
         for (const auto& format : available_formats) {
@@ -286,9 +71,9 @@ auto main() -> i32
         }
 
         u32 mode_count = 0;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, context->surface(), &mode_count, nullptr);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device->physical(), context->surface(), &mode_count, nullptr);
         std::vector<VkPresentModeKHR> available_modes(mode_count);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, context->surface(), &mode_count, available_modes.data());
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device->physical(), context->surface(), &mode_count, available_modes.data());
 
         present_mode = VK_PRESENT_MODE_FIFO_KHR;
         for (const auto& mode : available_modes) {
@@ -342,14 +127,14 @@ auto main() -> i32
             .oldSwapchain = VK_NULL_HANDLE
         };
 
-        VK_CHECK(vkCreateSwapchainKHR(device, &swapchain_info, nullptr, &swapchain));
+        VK_CHECK(vkCreateSwapchainKHR(device->device(), &swapchain_info, nullptr, &swapchain));
 
-        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr);
+        vkGetSwapchainImagesKHR(device->device(), swapchain, &swapchain_image_count, nullptr);
 
         swapchain_images.resize(swapchain_image_count);
         swapchain_image_views.resize(swapchain_image_count);
 
-        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_images.data());
+        vkGetSwapchainImagesKHR(device->device(), swapchain, &swapchain_image_count, swapchain_images.data());
 
         for (u32 i = 0; i < swapchain_image_count; ++i) {
             VkImageViewCreateInfo view_info {
@@ -374,16 +159,16 @@ auto main() -> i32
                 }
             };
 
-            VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &swapchain_image_views[i]));
+            VK_CHECK(vkCreateImageView(device->device(), &view_info, nullptr, &swapchain_image_views[i]));
         }
     }
 
     std::println("creating command and sync primitives");
 
-    QueueSync graphics_sync = QueueSync::create(device, graphics_queue);
-    QueueSync compute_sync = QueueSync::create(device, compute_queue);
+    QueueSync graphics_sync = QueueSync::create(device->device(), device->graphics_queue());
+    QueueSync compute_sync = QueueSync::create(device->device(), device->compute_queue());
 
-    CommandContext compute_command = CommandContext::create(device, compute_queue_index);
+    CommandContext compute_command = CommandContext::create(device->device(), device->compute_index());
 
     std::println("loading model");
 
@@ -404,11 +189,11 @@ auto main() -> i32
         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-    Buffer vertex_buffer = Buffer::create(allocator, vertex_size, build_input_flags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-    Buffer index_buffer = Buffer::create(allocator, index_size, build_input_flags | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    Buffer vertex_buffer = Buffer::create(device->allocator(), vertex_size, build_input_flags, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    Buffer index_buffer = Buffer::create(device->allocator(), index_size, build_input_flags | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
-    Buffer vertex_staging = Buffer::create_staging(allocator, vertex_size, model.mesh->positions.data());
-    Buffer index_staging = Buffer::create_staging(allocator, index_size, model.mesh->indices.data());
+    Buffer vertex_staging = Buffer::create_staging(device->allocator(), vertex_size, model.mesh->positions.data());
+    Buffer index_staging = Buffer::create_staging(device->allocator(), index_size, model.mesh->indices.data());
 
     VkAccelerationStructureKHR blas;
     Buffer blas_buffer;
@@ -455,10 +240,10 @@ auto main() -> i32
         .pNext = nullptr
     };
 
-    vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &blas_build_info, &primitive_count, &blas_size_info);
+    vkGetAccelerationStructureBuildSizesKHR(device->device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &blas_build_info, &primitive_count, &blas_size_info);
     std::println("blas size: {}", blas_size_info.accelerationStructureSize);
 
-    blas_buffer = Buffer::create(allocator, blas_size_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    blas_buffer = Buffer::create(device->allocator(), blas_size_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
     VkAccelerationStructureCreateInfoKHR blas_create_info {
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
@@ -471,9 +256,9 @@ auto main() -> i32
         .deviceAddress = 0
     };
 
-    VK_CHECK(vkCreateAccelerationStructureKHR(device, &blas_create_info, nullptr, &blas));
+    VK_CHECK(vkCreateAccelerationStructureKHR(device->device(), &blas_create_info, nullptr, &blas));
 
-    blas_scratch = Buffer::create_aligned(allocator, blas_size_info.buildScratchSize, as_props.minAccelerationStructureScratchOffsetAlignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    blas_scratch = Buffer::create_aligned(device->allocator(), blas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
     blas_build_info.dstAccelerationStructure = blas;
     blas_build_info.scratchData.deviceAddress = blas_scratch.address;
@@ -498,7 +283,7 @@ auto main() -> i32
         .accelerationStructure = blas
     };
 
-    VkDeviceAddress blas_address = vkGetAccelerationStructureDeviceAddressKHR(device, &blas_address_info);
+    VkDeviceAddress blas_address = vkGetAccelerationStructureDeviceAddressKHR(device->device(), &blas_address_info);
 
     VkAccelerationStructureInstanceKHR tlas_instance {
         .transform = {
@@ -515,8 +300,8 @@ auto main() -> i32
         .accelerationStructureReference = blas_address
     };
 
-    instance_buffer = Buffer::create(allocator, sizeof(VkAccelerationStructureInstanceKHR), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-    instance_buffer.upload(allocator, &tlas_instance, sizeof(VkAccelerationStructureInstanceKHR));
+    instance_buffer = Buffer::create(device->allocator(), sizeof(VkAccelerationStructureInstanceKHR), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    instance_buffer.upload(device->allocator(), &tlas_instance, sizeof(VkAccelerationStructureInstanceKHR));
 
     VkDeviceAddress instance_buffer_address = instance_buffer.address;
 
@@ -556,10 +341,10 @@ auto main() -> i32
         .pNext = nullptr
     };
 
-    vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas_build_info, &instance_count, &tlas_size_info);
+    vkGetAccelerationStructureBuildSizesKHR(device->device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas_build_info, &instance_count, &tlas_size_info);
     std::println("tlas size: {}", tlas_size_info.accelerationStructureSize);
 
-    tlas_buffer = Buffer::create(allocator, tlas_size_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    tlas_buffer = Buffer::create(device->allocator(), tlas_size_info.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
     VkAccelerationStructureCreateInfoKHR tlas_create_info {
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
@@ -572,9 +357,9 @@ auto main() -> i32
         .deviceAddress = 0
     };
 
-    VK_CHECK(vkCreateAccelerationStructureKHR(device, &tlas_create_info, nullptr, &tlas));
+    VK_CHECK(vkCreateAccelerationStructureKHR(device->device(), &tlas_create_info, nullptr, &tlas));
 
-    tlas_scratch = Buffer::create_aligned(allocator, tlas_size_info.buildScratchSize, as_props.minAccelerationStructureScratchOffsetAlignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+    tlas_scratch = Buffer::create_aligned(device->allocator(), tlas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
     tlas_build_info.dstAccelerationStructure = tlas;
     tlas_build_info.scratchData.deviceAddress = tlas_scratch.address;
@@ -588,7 +373,7 @@ auto main() -> i32
 
     const VkAccelerationStructureBuildRangeInfoKHR* p_tlas_range_info = &tlas_range_info;
 
-    compute_command.record(device, [&](VkCommandBuffer cmd) {
+    compute_command.record(device->device(), [&](VkCommandBuffer cmd) {
         Buffer::copy(cmd, vertex_staging, vertex_buffer, vertex_size);
         Buffer::copy(cmd, index_staging, index_buffer, index_size);
 
@@ -645,15 +430,15 @@ auto main() -> i32
 
     std::vector<VkSemaphoreSubmitInfo> as_waits;
     std::vector<VkSemaphoreSubmitInfo> as_signals;
-    u64 as_signal_value = compute_sync.submit(device, compute_command.buffer, as_waits, as_signals);
+    u64 as_signal_value = compute_sync.submit(device->device(), compute_command.buffer, as_waits, as_signals);
 
     std::println("creating frame resources");
 
     std::array<FrameContext, FRAMES_IN_FLIGHT> frames;
     for (auto& frame : frames) {
-        frame = FrameContext::create(device,
-            graphics_queue_index,
-            compute_queue_index
+        frame = FrameContext::create(device->device(),
+            device->graphics_index(),
+            device->compute_index()
         );
     }
     
@@ -668,20 +453,20 @@ auto main() -> i32
         .pValues = &as_signal_value
     };
 
-    VK_CHECK(vkWaitSemaphores(device, &as_wait_info, std::numeric_limits<u64>::max()));
+    VK_CHECK(vkWaitSemaphores(device->device(), &as_wait_info, std::numeric_limits<u64>::max()));
 
-    tlas_scratch.destroy(allocator);
-    instance_buffer.destroy(allocator);
+    tlas_scratch.destroy(device->allocator());
+    instance_buffer.destroy(device->allocator());
 
-    blas_scratch.destroy(allocator);
+    blas_scratch.destroy(device->allocator());
 
-    vertex_staging.destroy(allocator);
-    index_staging.destroy(allocator);
+    vertex_staging.destroy(device->allocator());
+    index_staging.destroy(device->allocator());
 
-    vertex_buffer.destroy(allocator);
-    index_buffer.destroy(allocator);
+    vertex_buffer.destroy(device->allocator());
+    index_buffer.destroy(device->allocator());
 
-    compute_command.destroy(device);
+    compute_command.destroy(device->device());
 
     std::println("render loop start");
 
@@ -702,20 +487,20 @@ auto main() -> i32
                 .pValues = &wait_value
             };
 
-            VK_CHECK(vkWaitSemaphores(device, &wait_info, std::numeric_limits<u64>::max()));
+            VK_CHECK(vkWaitSemaphores(device->device(), &wait_info, std::numeric_limits<u64>::max()));
         }
 
         u32 swapchain_index;
-        vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<u64>::max(), frame.image_available, VK_NULL_HANDLE, &swapchain_index);
+        vkAcquireNextImageKHR(device->device(), swapchain, std::numeric_limits<u64>::max(), frame.image_available, VK_NULL_HANDLE, &swapchain_index);
 
-        frame.compute.record(device, [&](VkCommandBuffer cmd) {
+        frame.compute.record(device->device(), [&](VkCommandBuffer cmd) {
         });
 
         std::vector<VkSemaphoreSubmitInfo> compute_waits;
         std::vector<VkSemaphoreSubmitInfo> compute_signals;
-        u64 compute_signal_value = compute_sync.submit(device, frame.compute.buffer, compute_waits, compute_signals);
+        u64 compute_signal_value = compute_sync.submit(device->device(), frame.compute.buffer, compute_waits, compute_signals);
 
-        frame.graphics.record(device, [&](VkCommandBuffer cmd) {
+        frame.graphics.record(device->device(), [&](VkCommandBuffer cmd) {
             VkImageMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .pNext = nullptr,
@@ -783,7 +568,7 @@ auto main() -> i32
             .deviceIndex = 0
         });
 
-        u64 graphics_signal_value = graphics_sync.submit(device, frame.graphics.buffer, graphics_waits, graphics_signals);
+        u64 graphics_signal_value = graphics_sync.submit(device->device(), frame.graphics.buffer, graphics_waits, graphics_signals);
 
         VkPresentInfoKHR present_info {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -796,36 +581,33 @@ auto main() -> i32
             .pResults = nullptr
         };
 
-        vkQueuePresentKHR(graphics_queue, &present_info);
+        vkQueuePresentKHR(device->graphics_queue(), &present_info);
 
         frame_count++;
     }
 
-    vkDeviceWaitIdle(device);
+    vkDeviceWaitIdle(device->device());
 
     for (auto& frame : frames) {
-        frame.destroy(device);
+        frame.destroy(device->device());
     }
 
-    graphics_sync.destroy(device);
-    compute_sync.destroy(device);
+    graphics_sync.destroy(device->device());
+    compute_sync.destroy(device->device());
 
-    vkDestroyAccelerationStructureKHR(device, tlas, nullptr);
-    tlas_buffer.destroy(allocator);
+    vkDestroyAccelerationStructureKHR(device->device(), tlas, nullptr);
+    tlas_buffer.destroy(device->allocator());
 
-    vkDestroyAccelerationStructureKHR(device, blas, nullptr);
-    blas_buffer.destroy(allocator);
+    vkDestroyAccelerationStructureKHR(device->device(), blas, nullptr);
+    blas_buffer.destroy(device->allocator());
 
     for (u32 i = 0; i < swapchain_image_count; ++i) {
-        vkDestroyImageView(device, swapchain_image_views[i], nullptr);
+        vkDestroyImageView(device->device(), swapchain_image_views[i], nullptr);
     }
 
-    vkDestroySwapchainKHR(device, swapchain, nullptr);
+    vkDestroySwapchainKHR(device->device(), swapchain, nullptr);
     swapchain_image_views.clear();
     swapchain_images.clear();
-
-    vmaDestroyAllocator(allocator);
-    vkDestroyDevice(device, nullptr);
 
     glfwDestroyWindow(window);
     glfwTerminate();

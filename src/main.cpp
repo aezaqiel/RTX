@@ -7,6 +7,7 @@
 
 #include "rhi/context.hpp"
 #include "rhi/device.hpp"
+#include "rhi/swapchain.hpp"
 #include "rhi/command.hpp"
 #include "rhi/sync.hpp"
 #include "rhi/buffer.hpp"
@@ -15,15 +16,19 @@
 
 namespace {
 
+    bool g_running = true;
     constexpr usize FRAMES_IN_FLIGHT = 3;
+
+    struct WindowData
+    {
+        u32 width;
+        u32 height;
+    };
 
 }
 
 auto main() -> i32
 {
-    i32 window_width = 1280;
-    i32 window_height = 720;
-
     glfwSetErrorCallback([](i32 code, const char* desc) {
         std::println(std::cerr, "glfw error ({}): {}", code, desc);
     });
@@ -32,136 +37,41 @@ auto main() -> i32
 
     glfwInit();
 
+    WindowData window_data;
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     GLFWwindow* window = glfwCreateWindow(1280, 720, "RTX", nullptr, nullptr);
     {
-        glfwGetFramebufferSize(window, &window_width, &window_height);
-        std::println("created window \"{}\" ({}, {})", glfwGetWindowTitle(window), window_width, window_height);
+        i32 w;
+        i32 h;
+        glfwGetFramebufferSize(window, &w, &h);
+
+        window_data.width = static_cast<u32>(w);
+        window_data.height = static_cast<u32>(h);
+
+        std::println("created window \"{}\" ({}, {})", glfwGetWindowTitle(window), window_data.width, window_data.height);
     }
 
-    std::println("creating vulkan instance");
+    glfwSetWindowUserPointer(window, &window_data);
+
+    glfwSetWindowCloseCallback(window, [](GLFWwindow*) {
+        g_running = false;
+    });
+
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* window, i32 width, i32 height) {
+        WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+        data.width = static_cast<u32>(width);
+        data.height = static_cast<u32>(height);
+    });
+
+    std::println("creating vulkan context");
     auto context = std::make_shared<RHI::Context>(window);
 
     std::println("creating vulkan device");
     auto device = std::make_shared<RHI::Device>(context);
 
-    std::println("query swapchain details");
-
-    VkSurfaceCapabilitiesKHR surface_caps;
-    VkSurfaceFormatKHR surface_format;
-    VkPresentModeKHR present_mode;
-    VkExtent2D extent;
-
-    { // swapchain details
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->physical(), context->surface(), &surface_caps);
-
-        u32 format_count = 0;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device->physical(), context->surface(), &format_count, nullptr);
-        std::vector<VkSurfaceFormatKHR> available_formats(format_count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device->physical(), context->surface(), &format_count, available_formats.data());
-
-        surface_format = available_formats[0];
-        for (const auto& format : available_formats) {
-            if (format.format == VK_FORMAT_R8G8B8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                surface_format = format;
-                break;
-            }
-        }
-
-        u32 mode_count = 0;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device->physical(), context->surface(), &mode_count, nullptr);
-        std::vector<VkPresentModeKHR> available_modes(mode_count);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device->physical(), context->surface(), &mode_count, available_modes.data());
-
-        present_mode = VK_PRESENT_MODE_FIFO_KHR;
-        for (const auto& mode : available_modes) {
-            if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-                break;
-            }
-        }
-
-        if (surface_caps.currentExtent.width != std::numeric_limits<u32>::max()) {
-            extent = surface_caps.currentExtent;
-        } else {
-            extent = {
-                .width = std::clamp(static_cast<u32>(window_width), surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width),
-                .height = std::clamp(static_cast<u32>(window_height), surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height)
-            };
-        }
-    }
-
-    std::println("create swapchain");
-
-    VkSwapchainKHR swapchain;
-    u32 swapchain_image_count;
-    std::vector<VkImage> swapchain_images;
-    std::vector<VkImageView> swapchain_image_views;
-
-    { // create swapchain
-        swapchain_image_count = surface_caps.minImageCount + 1;
-        if (surface_caps.maxImageCount > 0) {
-            swapchain_image_count = std::min(swapchain_image_count, surface_caps.maxImageCount);
-        }
-
-        VkSwapchainCreateInfoKHR swapchain_info {
-            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            .pNext = nullptr,
-            .flags = 0,
-            .surface = context->surface(),
-            .minImageCount = swapchain_image_count,
-            .imageFormat = surface_format.format,
-            .imageColorSpace = surface_format.colorSpace,
-            .imageExtent = extent,
-            .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr,
-            .preTransform = surface_caps.currentTransform,
-            .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-            .presentMode = present_mode,
-            .clipped = VK_TRUE,
-            .oldSwapchain = VK_NULL_HANDLE
-        };
-
-        VK_CHECK(vkCreateSwapchainKHR(device->device(), &swapchain_info, nullptr, &swapchain));
-
-        vkGetSwapchainImagesKHR(device->device(), swapchain, &swapchain_image_count, nullptr);
-
-        swapchain_images.resize(swapchain_image_count);
-        swapchain_image_views.resize(swapchain_image_count);
-
-        vkGetSwapchainImagesKHR(device->device(), swapchain, &swapchain_image_count, swapchain_images.data());
-
-        for (u32 i = 0; i < swapchain_image_count; ++i) {
-            VkImageViewCreateInfo view_info {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .image = swapchain_images[i],
-                .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                .format = surface_format.format,
-                .components = {
-                    .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                    .a = VK_COMPONENT_SWIZZLE_IDENTITY
-                },
-                .subresourceRange = {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1
-                }
-            };
-
-            VK_CHECK(vkCreateImageView(device->device(), &view_info, nullptr, &swapchain_image_views[i]));
-        }
-    }
+    std::println("creating vulkan swapchain");
+    auto swapchain = std::make_unique<RHI::Swapchain>(context, device, VkExtent2D { window_data.width, window_data.height });
 
     std::println("creating command and sync primitives");
 
@@ -174,10 +84,7 @@ auto main() -> i32
 
     auto model = Loader::load_obj("assets/sponza/sponza.obj");
 
-    std::println("Model loaded: {} vertices, {} indices", 
-        model.mesh->positions.size(), 
-        model.mesh->indices.size()
-    );
+    std::println("Model loaded: {} triangles", model.mesh->positions.size() / 3);
 
     std::println("uploading model and building AS");
 
@@ -471,8 +378,15 @@ auto main() -> i32
     std::println("render loop start");
 
     u64 frame_count = 0;
-    while (!glfwWindowShouldClose(window)) {
+    while (g_running) {
         glfwPollEvents();
+
+        // stall if minimized
+        while (g_running && (window_data.width == 0 || window_data.height == 0)) {
+            glfwWaitEvents();
+        }
+
+        if (!g_running) break;
         
         FrameContext& frame = frames[frame_count % FRAMES_IN_FLIGHT];
         if (frame_count >= FRAMES_IN_FLIGHT) {
@@ -490,8 +404,10 @@ auto main() -> i32
             VK_CHECK(vkWaitSemaphores(device->device(), &wait_info, std::numeric_limits<u64>::max()));
         }
 
-        u32 swapchain_index;
-        vkAcquireNextImageKHR(device->device(), swapchain, std::numeric_limits<u64>::max(), frame.image_available, VK_NULL_HANDLE, &swapchain_index);
+        if (!swapchain->acquire_image()) {
+            swapchain->recreate(VkExtent2D { window_data.width, window_data.height });
+            continue;
+        }
 
         frame.compute.record(device->device(), [&](VkCommandBuffer cmd) {
         });
@@ -512,7 +428,7 @@ auto main() -> i32
                 .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = swapchain_images[swapchain_index],
+                .image = swapchain->current_image(),
                 .subresourceRange = {
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel = 0,
@@ -537,51 +453,20 @@ auto main() -> i32
             vkCmdPipelineBarrier2(cmd, &dependency);
         });
 
-        std::vector<VkSemaphoreSubmitInfo> graphics_waits;
+        std::vector<VkSemaphoreSubmitInfo> graphics_waits {
+            swapchain->acquire_wait_info(),
+            compute_sync.wait_info()
+        };
 
-        graphics_waits.push_back(VkSemaphoreSubmitInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .semaphore = frame.image_available,
-            .value = 0,
-            .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .deviceIndex = 0
-        });
-
-        graphics_waits.push_back(VkSemaphoreSubmitInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .semaphore = compute_sync.timeline,
-            .value = compute_signal_value,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .deviceIndex = 0
-        });
-
-        std::vector<VkSemaphoreSubmitInfo> graphics_signals;
-
-        graphics_signals.push_back(VkSemaphoreSubmitInfo {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .semaphore = frame.render_complete,
-            .value = 0,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .deviceIndex = 0
-        });
+        std::vector<VkSemaphoreSubmitInfo> graphics_signals {
+            swapchain->present_signal_info()
+        };
 
         u64 graphics_signal_value = graphics_sync.submit(device->device(), frame.graphics.buffer, graphics_waits, graphics_signals);
 
-        VkPresentInfoKHR present_info {
-            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .pNext = nullptr,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &frame.render_complete,
-            .swapchainCount = 1,
-            .pSwapchains = &swapchain,
-            .pImageIndices = &swapchain_index,
-            .pResults = nullptr
-        };
-
-        vkQueuePresentKHR(device->graphics_queue(), &present_info);
+        if (!swapchain->present()) {
+            swapchain->recreate(VkExtent2D { window_data.width, window_data.height });
+        }
 
         frame_count++;
     }
@@ -600,14 +485,6 @@ auto main() -> i32
 
     vkDestroyAccelerationStructureKHR(device->device(), blas, nullptr);
     blas_buffer.destroy(device->allocator());
-
-    for (u32 i = 0; i < swapchain_image_count; ++i) {
-        vkDestroyImageView(device->device(), swapchain_image_views[i], nullptr);
-    }
-
-    vkDestroySwapchainKHR(device->device(), swapchain, nullptr);
-    swapchain_image_views.clear();
-    swapchain_images.clear();
 
     glfwDestroyWindow(window);
     glfwTerminate();

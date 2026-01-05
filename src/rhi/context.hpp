@@ -15,8 +15,8 @@ namespace RHI {
         Context(const Context&) = delete;
         Context& operator=(const Context&) = delete;
 
-        [[nodiscard]] auto instance() -> VkInstance { return m_instance; }
-        [[nodiscard]] auto surface() -> VkSurfaceKHR { return m_surface; }
+        [[nodiscard]] auto instance() const -> VkInstance   { return m_instance; }
+        [[nodiscard]] auto surface()  const -> VkSurfaceKHR { return m_surface; }
 
     private:
         VkInstance m_instance { VK_NULL_HANDLE };

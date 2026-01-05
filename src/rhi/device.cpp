@@ -215,4 +215,9 @@ namespace RHI {
         vkDestroyDevice(m_device, nullptr);
     }
 
+    auto Device::wait_idle() const -> void
+    {
+        vkDeviceWaitIdle(m_device);
+    }
+
 }

@@ -72,29 +72,28 @@ struct QueueSync
         VK_CHECK(vkQueueSubmit2(queue, 1, &submit, VK_NULL_HANDLE));
         return value;
     }
+
+    auto wait_info(VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT) const -> VkSemaphoreSubmitInfo
+    {
+        return VkSemaphoreSubmitInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .semaphore = timeline,
+            .value = value,
+            .stageMask = stage,
+            .deviceIndex = 0
+        };
+    }
 };
 
 struct FrameContext
 {
-    VkSemaphore image_available;
-    VkSemaphore render_complete;
-
     CommandContext graphics;
     CommandContext compute;
 
     static auto create(VkDevice device, u32 graphics, u32 compute) -> FrameContext
     {
         FrameContext context;
-
-        VkSemaphoreCreateInfo semaphore_info {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0
-        };
-
-        VK_CHECK(vkCreateSemaphore(device, &semaphore_info, nullptr, &context.image_available));
-        VK_CHECK(vkCreateSemaphore(device, &semaphore_info, nullptr, &context.render_complete));
-
         context.graphics = CommandContext::create(device, graphics);
         context.compute = CommandContext::create(device, compute);
 
@@ -103,9 +102,6 @@ struct FrameContext
 
     auto destroy(VkDevice device) -> void
     {
-        vkDestroySemaphore(device, image_available, nullptr);
-        vkDestroySemaphore(device, render_complete, nullptr);
-
         compute.destroy(device);
         graphics.destroy(device);
     }

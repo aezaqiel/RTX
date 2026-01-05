@@ -37,6 +37,8 @@ namespace RHI {
         [[nodiscard]] auto as_props() const -> VkPhysicalDeviceAccelerationStructurePropertiesKHR { return m_as_props; }
         [[nodiscard]] auto rt_props() const -> VkPhysicalDeviceRayTracingPipelinePropertiesKHR { return m_rt_props; }
 
+        auto wait_idle() const -> void;
+
     private:
         std::shared_ptr<Context> m_context;
 

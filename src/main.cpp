@@ -23,11 +23,6 @@ namespace {
         u32 height;
     };
 
-    constexpr auto align_up(u64 size, u64 alignment) -> u64
-    {
-        return (size + alignment - 1) & ~(alignment - 1);
-    }
-
 }
 
 auto main() -> i32
@@ -178,7 +173,7 @@ auto main() -> i32
 
         VK_CHECK(vkCreateAccelerationStructureKHR(device->device(), &blas_create_info, nullptr, &blas));
 
-        u64 blas_scratch_size = align_up(blas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment);
+        u64 blas_scratch_size = vkutils::align_up(blas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment);
         RHI::Buffer blas_scratch(device, blas_scratch_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
         blas_build_info.dstAccelerationStructure = blas;
@@ -275,7 +270,7 @@ auto main() -> i32
 
         VK_CHECK(vkCreateAccelerationStructureKHR(device->device(), &tlas_create_info, nullptr, &tlas));
 
-        u64 tlas_scratch_size = align_up(tlas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment);
+        u64 tlas_scratch_size = vkutils::align_up(tlas_size_info.buildScratchSize, device->as_props().minAccelerationStructureScratchOffsetAlignment);
         RHI::Buffer tlas_scratch(device, tlas_scratch_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
         tlas_build_info.dstAccelerationStructure = tlas;
@@ -290,15 +285,14 @@ auto main() -> i32
 
         const VkAccelerationStructureBuildRangeInfoKHR* p_tlas_range_info = &tlas_range_info;
 
-        compute_command->reset(); // do we need this?
-
-        auto build_cmd = compute_command->record([&](VkCommandBuffer cmd) {
-            RHI::Buffer::copy(cmd, vertex_staging, vertex_buffer, vertex_size,
+        auto build_cmd = compute_command->begin();
+        {
+            RHI::Buffer::copy(build_cmd, vertex_staging, vertex_buffer, vertex_size,
                 VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                 VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
             );
 
-            RHI::Buffer::copy(cmd, index_staging, index_buffer, index_size,
+            RHI::Buffer::copy(build_cmd, index_staging, index_buffer, index_size,
                 VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                 VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
             );
@@ -324,9 +318,9 @@ auto main() -> i32
                 .pImageMemoryBarriers = nullptr
             };
 
-            vkCmdPipelineBarrier2(cmd, &upload_dependency);
+            vkCmdPipelineBarrier2(build_cmd, &upload_dependency);
 
-            vkCmdBuildAccelerationStructuresKHR(cmd, 1, &blas_build_info, &p_blas_range_info);
+            vkCmdBuildAccelerationStructuresKHR(build_cmd, 1, &blas_build_info, &p_blas_range_info);
 
             VkMemoryBarrier2 blas_barrier {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
@@ -349,10 +343,11 @@ auto main() -> i32
                 .pImageMemoryBarriers = nullptr
             };
 
-            vkCmdPipelineBarrier2(cmd, &blas_dependency);
+            vkCmdPipelineBarrier2(build_cmd, &blas_dependency);
 
-            vkCmdBuildAccelerationStructuresKHR(cmd, 1, &tlas_build_info, &p_tlas_range_info);
-        });
+            vkCmdBuildAccelerationStructuresKHR(build_cmd, 1, &tlas_build_info, &p_tlas_range_info);
+        }
+        compute_command->end();
 
         std::vector<VkSemaphoreSubmitInfo> as_waits;
         std::vector<VkSemaphoreSubmitInfo> as_signals;
@@ -381,12 +376,6 @@ auto main() -> i32
             graphics_queue->sync(wait_value);
         }
 
-        // reset command pools
-
-        graphics_command->reset();
-        compute_command->reset();
-        transfer_command->reset();
-
         // acquire swapchain image
 
         if (!swapchain->acquire_image()) {
@@ -396,10 +385,11 @@ auto main() -> i32
 
         // record commands
 
-        auto compute_cmd = compute_command->record([&](VkCommandBuffer cmd) {
-        });
+        auto compute_cmd = compute_command->begin();
+        compute_command->end();
 
-        auto graphics_cmd = graphics_command->record([&](VkCommandBuffer cmd) {
+        auto graphics_cmd = graphics_command->begin();
+        {
             VkImageMemoryBarrier2 barrier {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .pNext = nullptr,
@@ -433,8 +423,9 @@ auto main() -> i32
                 .pImageMemoryBarriers = &barrier
             };
 
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        });
+            vkCmdPipelineBarrier2(graphics_cmd, &dependency);
+        }
+        graphics_command->end();
 
         // submit commands
 

@@ -38,14 +38,12 @@ namespace RHI {
         }
     }
 
-    auto Command::reset(VkCommandPoolResetFlags flags) -> void
+    auto Command::begin(VkCommandPoolResetFlags flags) -> VkCommandBuffer
     {
         m_frame_index = (m_frame_index + 1) % m_frames_in_flight;
-        vkResetCommandPool(m_device->device(), m_pools[m_frame_index], flags);
-    }
 
-    auto Command::record(std::function<void(VkCommandBuffer)>&& func) -> VkCommandBuffer
-    {
+        vkResetCommandPool(m_device->device(), m_pools[m_frame_index], flags);
+
         constexpr VkCommandBufferBeginInfo begin_info {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .pNext = nullptr,
@@ -54,10 +52,13 @@ namespace RHI {
         };
 
         VK_CHECK(vkBeginCommandBuffer(m_buffers[m_frame_index], &begin_info));
-        std::invoke(func, std::forward<VkCommandBuffer>((m_buffers[m_frame_index])));
-        VK_CHECK(vkEndCommandBuffer(m_buffers[m_frame_index]));
 
         return m_buffers[m_frame_index];
+    }
+
+    auto Command::end() -> void
+    {
+        VK_CHECK(vkEndCommandBuffer(m_buffers[m_frame_index]));
     }
 
 }

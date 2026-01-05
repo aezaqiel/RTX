@@ -11,8 +11,8 @@ namespace RHI {
         Command(const std::shared_ptr<Device>& device, u32 queue_index, usize frames_in_flight);
         ~Command();
 
-        auto reset(VkCommandPoolResetFlags flags = 0) -> void;
-        auto record(std::function<void(VkCommandBuffer)>&& func) -> VkCommandBuffer;
+        auto begin(VkCommandPoolResetFlags flags = 0) -> VkCommandBuffer;
+        auto end() -> void;
 
     private:
         std::shared_ptr<Device> m_device;

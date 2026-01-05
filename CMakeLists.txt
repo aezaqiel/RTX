@@ -26,8 +26,8 @@ add_subdirectory(thirdparty/tinyobjloader)
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/types.hpp
-    src/vk_types.hpp
 
+    src/rhi/vk_types.hpp
     src/rhi/context.hpp
     src/rhi/context.cpp
     src/rhi/device.hpp

@@ -16,3 +16,6 @@
 [submodule "res/assets/sponza"]
 	path = res/assets/sponza
 	url = https://github.com/jimmiebergmann/Sponza.git
+[submodule "thirdparty/meshoptimizer"]
+	path = thirdparty/meshoptimizer
+	url = https://github.com/aezaqiel/meshoptimizer

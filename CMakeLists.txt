@@ -36,6 +36,7 @@ add_subdirectory(thirdparty/volk)
 add_subdirectory(thirdparty/glm)
 add_subdirectory(thirdparty/vma)
 add_subdirectory(thirdparty/tinyobjloader)
+add_subdirectory(thirdparty/meshoptimizer)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
@@ -82,6 +83,7 @@ PRIVATE
     glm
     VulkanMemoryAllocator
     tinyobjloader
+    meshoptimizer
 )
 
 target_compile_definitions(${PROJECT_NAME}

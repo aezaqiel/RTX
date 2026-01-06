@@ -78,8 +78,6 @@ auto main() -> i32
     auto compute_command = std::make_unique<RHI::Command>(device, device->compute_index(), FRAMES_IN_FLIGHT);
     auto transfer_command = std::make_unique<RHI::Command>(device, device->transfer_index(), FRAMES_IN_FLIGHT);
 
-    std::println("loading models");
-
     auto sponza = Loader::load_obj("assets/sponza/sponza.obj");
 
     auto upload_cmd = transfer_command->begin();
@@ -211,11 +209,9 @@ auto main() -> i32
     std::vector<VkSemaphoreSubmitInfo> upload_signals;
     transfer_queue->submit(upload_cmd, {}, upload_signals);
 
-    std::println("AS build");
-
     RHI::AccelerationStructureBuilder as_builder(device);
 
-    auto as_cmd = compute_command->begin();
+    auto blas_cmd = compute_command->begin();
 
     // take ownership
 
@@ -286,7 +282,7 @@ auto main() -> i32
         .pImageMemoryBarriers = nullptr
     };
 
-    vkCmdPipelineBarrier2(as_cmd, &acquire_dependency);
+    vkCmdPipelineBarrier2(blas_cmd, &acquire_dependency);
 
     RHI::BLAS::Input sponza_blas_input;
     sponza_blas_input.add_geometry(*sponza_vb, sponza.mesh->vertices.size(), sizeof(Vertex), *sponza_ib, sponza.mesh->indices.size());
@@ -294,10 +290,17 @@ auto main() -> i32
     RHI::BLAS::Input teapot_blas_input;
     teapot_blas_input.add_geometry(*teapot_vb, teapot.mesh->vertices.size(), sizeof(Vertex), *teapot_ib, teapot.mesh->indices.size());
 
-    auto blases = as_builder.build_blas(as_cmd, {
+    auto blases = as_builder.build_blas(blas_cmd, {
         sponza_blas_input,
         teapot_blas_input
     });
+
+    compute_command->end(blas_cmd);
+
+    std::vector<VkSemaphoreSubmitInfo> blas_signals;
+    u64 blas_timeline = compute_queue->submit(blas_cmd, upload_signals, blas_signals);
+
+    auto tlas_cmd = compute_command->begin();
 
     RHI::TLAS::Input tlas_input;
     for (const auto& blas : blases) {
@@ -311,14 +314,14 @@ auto main() -> i32
         });
     }
 
-    auto tlas = as_builder.build_tlas(as_cmd, tlas_input);
+    auto tlas = as_builder.build_tlas(tlas_cmd, tlas_input);
 
-    compute_command->end(as_cmd);
+    compute_command->end(tlas_cmd);
+    
+    std::vector<VkSemaphoreSubmitInfo> tlas_signals;
+    u64 tlas_timeline = compute_queue->submit(tlas_cmd, blas_signals, tlas_signals);
 
-    std::vector<VkSemaphoreSubmitInfo> as_signals;
-    u64 as_build_timeline = compute_queue->submit(as_cmd, upload_signals, as_signals);
-
-    compute_queue->sync(as_build_timeline);
+    compute_queue->sync(tlas_timeline);
 
     as_builder.cleanup();
 

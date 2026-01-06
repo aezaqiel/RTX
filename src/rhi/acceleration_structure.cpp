@@ -119,7 +119,6 @@ namespace RHI {
             };
 
             vkGetAccelerationStructureBuildSizesKHR(m_device->device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build_infos.back(), max_prims.data(), &size_info);
-            std::println("blas size: {}", size_info.accelerationStructureSize);
 
             scratch_offsets.push_back(total_scratch);
             total_scratch += vkutils::align_up(size_info.buildScratchSize, m_device->as_props().minAccelerationStructureScratchOffsetAlignment);

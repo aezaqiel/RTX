@@ -40,7 +40,14 @@ add_subdirectory(thirdparty/meshoptimizer)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/types.hpp
+
+    src/core/types.hpp
+    src/core/application.hpp
+    src/core/application.cpp
+    src/core/keycodes.hpp
+    src/core/events.hpp
+    src/core/window.hpp
+    src/core/window.cpp
 
     src/rhi/vk_types.hpp
     src/rhi/context.hpp

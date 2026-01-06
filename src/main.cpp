@@ -6,9 +6,10 @@
 #include "rhi/context.hpp"
 #include "rhi/device.hpp"
 #include "rhi/swapchain.hpp"
+#include "rhi/buffer.hpp"
+#include "rhi/barrier.hpp"
 #include "rhi/queue.hpp"
 #include "rhi/command.hpp"
-#include "rhi/buffer.hpp"
 #include "rhi/acceleration_structure.hpp"
 #include "rhi/shader.hpp"
 
@@ -98,75 +99,12 @@ auto main() -> i32
     auto teapot_vb = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->vertices.data(), teapot_vb_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
     auto teapot_ib = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->indices.data(), teapot_ib_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
-    // release ownership
-    std::array<VkBufferMemoryBarrier2, 4> release_barriers {
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = sponza_vb->buffer(),
-            .offset = 0,
-            .size = sponza_vb->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = sponza_ib->buffer(),
-            .offset = 0,
-            .size = sponza_ib->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = teapot_vb->buffer(),
-            .offset = 0,
-            .size = teapot_vb->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = teapot_ib->buffer(),
-            .offset = 0,
-            .size = teapot_ib->size()
-        }
-    };
-
-    VkDependencyInfo release_dependency {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .pNext = nullptr,
-        .dependencyFlags = 0,
-        .memoryBarrierCount = 0,
-        .pMemoryBarriers = nullptr,
-        .bufferMemoryBarrierCount = static_cast<u32>(release_barriers.size()),
-        .pBufferMemoryBarriers = release_barriers.data(),
-        .imageMemoryBarrierCount = 0,
-        .pImageMemoryBarriers = nullptr
-    };
-
-    vkCmdPipelineBarrier2(upload_cmd, &release_dependency);
+    RHI::BarrierBatch(upload_cmd)
+        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
+        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
+        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
+        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
+        .insert();
 
     transfer_command->end(upload_cmd);
 
@@ -179,74 +117,12 @@ auto main() -> i32
 
     // take ownership
 
-    std::array<VkBufferMemoryBarrier2, 4> acquire_barriers {
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = sponza_vb->buffer(),
-            .offset = 0,
-            .size = sponza_vb->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = sponza_ib->buffer(),
-            .offset = 0,
-            .size = sponza_ib->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = teapot_vb->buffer(),
-            .offset = 0,
-            .size = teapot_vb->size()
-        },
-        VkBufferMemoryBarrier2 {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-            .srcQueueFamilyIndex = device->transfer_index(),
-            .dstQueueFamilyIndex = device->compute_index(),
-            .buffer = teapot_ib->buffer(),
-            .offset = 0,
-            .size = teapot_ib->size()
-        }
-    };
-
-    VkDependencyInfo acquire_dependency {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .pNext = nullptr,
-        .dependencyFlags = 0,
-        .memoryBarrierCount = 0,
-        .pMemoryBarriers = nullptr,
-        .bufferMemoryBarrierCount = static_cast<u32>(acquire_barriers.size()),
-        .pBufferMemoryBarriers = acquire_barriers.data(),
-        .imageMemoryBarrierCount = 0,
-        .pImageMemoryBarriers = nullptr
-    };
-
-    vkCmdPipelineBarrier2(blas_cmd, &acquire_dependency);
+    RHI::BarrierBatch(blas_cmd)
+        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+        .insert();
 
     RHI::BLAS::Input sponza_blas_input;
     sponza_blas_input.add_geometry(*sponza_vb, sponza.mesh->vertices.size(), sizeof(Vertex), *sponza_ib, sponza.mesh->indices.size());
@@ -339,42 +215,9 @@ auto main() -> i32
         compute_command->end(compute_cmd);
 
         auto graphics_cmd = graphics_command->begin();
-        {
-            VkImageMemoryBarrier2 barrier {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .pNext = nullptr,
-                .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .srcAccessMask = VK_ACCESS_2_NONE,
-                .dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-                .dstAccessMask = VK_ACCESS_2_NONE,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = swapchain->current_image().image(),
-                .subresourceRange = {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1
-                }
-            };
-
-            VkDependencyInfo dependency {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext = nullptr,
-                .dependencyFlags = 0,
-                .memoryBarrierCount = 0,
-                .pMemoryBarriers = nullptr,
-                .bufferMemoryBarrierCount = 0,
-                .pBufferMemoryBarriers = nullptr,
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &barrier
-            };
-
-            vkCmdPipelineBarrier2(graphics_cmd, &dependency);
-        }
+        RHI::BarrierBatch(graphics_cmd)
+            .image(swapchain->current_image(), VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+            .insert();
         graphics_command->end(graphics_cmd);
 
         // submit commands

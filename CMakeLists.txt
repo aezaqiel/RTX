@@ -49,14 +49,16 @@ add_executable(${PROJECT_NAME}
     src/rhi/device.cpp
     src/rhi/swapchain.hpp
     src/rhi/swapchain.cpp
-    src/rhi/queue.hpp
-    src/rhi/queue.cpp
-    src/rhi/command.hpp
-    src/rhi/command.cpp
     src/rhi/buffer.hpp
     src/rhi/buffer.cpp
     src/rhi/image.hpp
     src/rhi/image.cpp
+    src/rhi/barrier.hpp
+    src/rhi/barrier.cpp
+    src/rhi/queue.hpp
+    src/rhi/queue.cpp
+    src/rhi/command.hpp
+    src/rhi/command.cpp
     src/rhi/acceleration_structure.hpp
     src/rhi/acceleration_structure.cpp
     src/rhi/shader.hpp

@@ -79,6 +79,11 @@ namespace RHI {
     {
     }
 
+    AccelerationStructureBuilder::~AccelerationStructureBuilder()
+    {
+        cleanup();
+    }
+
     auto AccelerationStructureBuilder::build_blas(VkCommandBuffer cmd, const std::vector<BLAS::Input>& inputs) -> std::vector<std::unique_ptr<BLAS>>
     {
         std::vector<std::unique_ptr<BLAS>> blases;
@@ -97,7 +102,7 @@ namespace RHI {
                 .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
                 .pNext = nullptr,
                 .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-                .flags = input.flags,
+                .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR,
                 .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
                 .srcAccelerationStructure = VK_NULL_HANDLE,
                 .dstAccelerationStructure = VK_NULL_HANDLE,
@@ -129,7 +134,7 @@ namespace RHI {
             range_ptrs.push_back(input.ranges.data());
         }
 
-        VkDeviceAddress scratch_address = ensure_scratch(total_scratch);
+        VkDeviceAddress scratch_address = create_scratch(total_scratch);
         for (usize i = 0; i < build_infos.size(); ++i) {
             build_infos[i].scratchData.deviceAddress = scratch_address + scratch_offsets[i];
         }
@@ -159,7 +164,71 @@ namespace RHI {
 
         vkCmdPipelineBarrier2(cmd, &build_dependency);
 
+        std::vector<VkAccelerationStructureKHR> handles;
+        handles.reserve(blases.size());
+
+        for (const auto& blas : blases) {
+            handles.push_back(blas->as());
+        }
+
+        const auto& query = create_query(blases.size());
+        vkCmdResetQueryPool(cmd, query, 0, static_cast<u32>(handles.size()));
+        vkCmdWriteAccelerationStructuresPropertiesKHR(cmd, static_cast<u32>(handles.size()), handles.data(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, query, 0);
+
         return blases;
+    }
+
+    auto AccelerationStructureBuilder::compact_blas(VkCommandBuffer cmd, const std::vector<std::unique_ptr<BLAS>>& blases) -> std::vector<std::unique_ptr<BLAS>>
+    {
+        std::vector<std::unique_ptr<BLAS>> compacted;
+
+        std::vector<VkDeviceSize> compact_sizes(blases.size());
+        VK_CHECK(vkGetQueryPoolResults(m_device->device(), m_query.back(), 0, static_cast<u32>(blases.size()), compact_sizes.size() * sizeof(VkDeviceSize), compact_sizes.data(), sizeof(VkDeviceSize), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
+
+        for (usize i = 0; i < compact_sizes.size(); ++i) {
+            auto& new_blas = compacted.emplace_back(std::make_unique<BLAS>(m_device, compact_sizes[i]));
+
+            VkCopyAccelerationStructureInfoKHR copy_info {
+                .sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+                .pNext = nullptr,
+                .src = blases[i]->as(),
+                .dst = new_blas->as(),
+                .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR
+            };
+
+            vkCmdCopyAccelerationStructureKHR(cmd, &copy_info);
+
+            std::println("compacted blas: {} -> {} ({:.1f}\% smaller)",
+                blases[i]->buffer().size(),
+                new_blas->buffer().size(),
+                static_cast<f32>(blases[i]->buffer().size() - new_blas->buffer().size()) / static_cast<f32>(blases[i]->buffer().size()) * 100.0f
+            );
+        }
+
+        VkMemoryBarrier2 barrier {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR,
+            .srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+            .dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
+        };
+
+        VkDependencyInfo dependency {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .pNext = nullptr,
+            .dependencyFlags = 0,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &barrier,
+            .bufferMemoryBarrierCount = 0,
+            .pBufferMemoryBarriers = nullptr,
+            .imageMemoryBarrierCount = 0,
+            .pImageMemoryBarriers = nullptr
+        };
+
+        vkCmdPipelineBarrier2(cmd, &dependency);
+
+        return compacted;
     }
 
     auto AccelerationStructureBuilder::build_tlas(VkCommandBuffer cmd, const TLAS::Input& input) -> std::unique_ptr<TLAS>
@@ -195,7 +264,7 @@ namespace RHI {
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
             .pNext = nullptr,
             .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-            .flags = input.flags,
+            .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR,
             .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
             .srcAccelerationStructure = VK_NULL_HANDLE,
             .dstAccelerationStructure = VK_NULL_HANDLE,
@@ -223,7 +292,7 @@ namespace RHI {
         std::println("tlas size: {}", size_info.accelerationStructureSize);
 
         auto tlas = std::make_unique<TLAS>(m_device, size_info.accelerationStructureSize, std::move(instance_buffer));
-        VkDeviceAddress scratch_address = ensure_scratch(size_info.buildScratchSize);
+        VkDeviceAddress scratch_address = create_scratch(size_info.buildScratchSize);
 
         build_info.dstAccelerationStructure = tlas->as();
         build_info.scratchData.deviceAddress = scratch_address;
@@ -258,12 +327,40 @@ namespace RHI {
         return std::move(tlas);
     }
 
-    auto AccelerationStructureBuilder::ensure_scratch(u64 size) -> VkDeviceAddress
+    auto AccelerationStructureBuilder::cleanup() -> void
+    {
+        m_scratch.clear();
+        m_staging.clear();
+
+        for (auto& query : m_query) {
+            vkDestroyQueryPool(m_device->device(), query, nullptr);
+        }
+        m_query.clear();
+    }
+
+    auto AccelerationStructureBuilder::create_scratch(u64 size) -> VkDeviceAddress
     {
         size = vkutils::align_up(size, m_device->as_props().minAccelerationStructureScratchOffsetAlignment);
         auto& scratch = m_scratch.emplace_back(std::make_unique<Buffer>(m_device, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE));
 
         return scratch->address();
+    }
+
+    auto AccelerationStructureBuilder::create_query(u32 count) -> const VkQueryPool&
+    {
+        VkQueryPoolCreateInfo query_info {
+            .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+            .queryCount = count,
+            .pipelineStatistics = 0
+        };
+
+        auto& query = m_query.emplace_back(VK_NULL_HANDLE);
+        VK_CHECK(vkCreateQueryPool(m_device->device(), &query_info, nullptr, &query));
+
+        return query;
     }
 
 }

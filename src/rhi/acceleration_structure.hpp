@@ -37,7 +37,6 @@ namespace RHI {
         {
             std::vector<VkAccelerationStructureGeometryKHR> geometries;
             std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
-            VkBuildAccelerationStructureFlagsKHR flags { VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR };
 
             auto add_geometry(const Buffer& vertex_buffer, u32 vertex_count, u32 vertex_stride, const Buffer& index_buffer, u32 index_count, bool opaque = true) -> void;
         };
@@ -54,7 +53,6 @@ namespace RHI {
         struct Input
         {
             std::vector<VkAccelerationStructureInstanceKHR> instances;
-            VkBuildAccelerationStructureFlagsKHR flags { VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR };
         };
 
     public:
@@ -72,25 +70,25 @@ namespace RHI {
     {
     public:
         AccelerationStructureBuilder(const std::shared_ptr<Device>& device);
-        ~AccelerationStructureBuilder() = default;
+        ~AccelerationStructureBuilder();
 
         auto build_blas(VkCommandBuffer cmd, const std::vector<BLAS::Input>& inputs) -> std::vector<std::unique_ptr<BLAS>>;
+        auto compact_blas(VkCommandBuffer cmd, const std::vector<std::unique_ptr<BLAS>>& blases) -> std::vector<std::unique_ptr<BLAS>>;
+
         auto build_tlas(VkCommandBuffer cmd, const TLAS::Input& input) -> std::unique_ptr<TLAS>;
 
-        auto cleanup() -> void
-        {
-            m_scratch.clear();
-            m_staging.clear();
-        }
+        auto cleanup() -> void;
 
     private:
-        auto ensure_scratch(u64 size) -> VkDeviceAddress;
+        auto create_scratch(u64 size) -> VkDeviceAddress;
+        auto create_query(u32 count) -> const VkQueryPool&;
 
     private:
         std::shared_ptr<Device> m_device;
 
         std::vector<std::unique_ptr<Buffer>> m_scratch;
         std::vector<std::unique_ptr<Buffer>> m_staging;
+        std::vector<VkQueryPool> m_query;
     };
 
 }

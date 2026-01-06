@@ -290,7 +290,7 @@ auto main() -> i32
     RHI::BLAS::Input teapot_blas_input;
     teapot_blas_input.add_geometry(*teapot_vb, teapot.mesh->vertices.size(), sizeof(Vertex), *teapot_ib, teapot.mesh->indices.size());
 
-    auto blases = as_builder.build_blas(blas_cmd, {
+    auto raw_blases = as_builder.build_blas(blas_cmd, {
         sponza_blas_input,
         teapot_blas_input
     });
@@ -299,6 +299,15 @@ auto main() -> i32
 
     std::vector<VkSemaphoreSubmitInfo> blas_signals;
     u64 blas_timeline = compute_queue->submit(blas_cmd, upload_signals, blas_signals);
+
+    auto compact_cmd = compute_command->begin();
+
+    auto blases = as_builder.compact_blas(compact_cmd, raw_blases);
+
+    compute_command->end(compact_cmd);
+
+    std::vector<VkSemaphoreSubmitInfo> compact_signals;
+    u64 compact_timeline = compute_queue->submit(compact_cmd, blas_signals, compact_signals);
 
     auto tlas_cmd = compute_command->begin();
 
@@ -319,10 +328,11 @@ auto main() -> i32
     compute_command->end(tlas_cmd);
     
     std::vector<VkSemaphoreSubmitInfo> tlas_signals;
-    u64 tlas_timeline = compute_queue->submit(tlas_cmd, blas_signals, tlas_signals);
+    u64 tlas_timeline = compute_queue->submit(tlas_cmd, compact_signals, tlas_signals);
 
     compute_queue->sync(tlas_timeline);
 
+    raw_blases.clear();
     as_builder.cleanup();
 
     std::println("loading shaders");

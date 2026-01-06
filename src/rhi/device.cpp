@@ -102,9 +102,16 @@ namespace RHI {
             });
         }
 
+        VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rt_maintenance {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR,
+            .pNext = nullptr,
+            .rayTracingMaintenance1 = VK_TRUE,
+            .rayTracingPipelineTraceRaysIndirect2 = VK_FALSE
+        };
+
         VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_features {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-            .pNext = nullptr,
+            .pNext = &rt_maintenance,
             .rayTracingPipeline = VK_TRUE,
             .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
             .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
@@ -160,7 +167,8 @@ namespace RHI {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+            VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME
         };
 
         VkDeviceCreateInfo device_info {

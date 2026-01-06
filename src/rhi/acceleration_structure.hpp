@@ -5,8 +5,6 @@
 #include "vk_types.hpp"
 #include "device.hpp"
 #include "buffer.hpp"
-#include "command.hpp"
-#include "queue.hpp"
 
 namespace RHI {
 
@@ -15,88 +13,84 @@ namespace RHI {
     public:
         virtual ~AccelerationStructure();
 
-        AccelerationStructure(const AccelerationStructure&) = delete;
-        AccelerationStructure& operator=(const AccelerationStructure&) = delete;
-
         [[nodiscard]] auto as() const -> VkAccelerationStructureKHR { return m_as; }
         [[nodiscard]] auto buffer() const -> const Buffer& { return *m_buffer; }
-
-        auto address() const -> VkDeviceAddress;
-
-        auto build(VkCommandBuffer cmd) -> void;
-        auto compact(VkCommandBuffer cmd) -> void;
+        [[nodiscard]] auto address() const -> const VkDeviceAddress { return m_address; }
 
     protected:
-        AccelerationStructure(const std::shared_ptr<Device>& device);
+        AccelerationStructure(const std::shared_ptr<Device>& device, VkAccelerationStructureTypeKHR type, u64 size);
 
-    protected:
+    private:
         std::shared_ptr<Device> m_device;
 
-        VkAccelerationStructureKHR m_as { VK_NULL_HANDLE };
         std::unique_ptr<Buffer> m_buffer;
 
-        std::vector<VkAccelerationStructureGeometryKHR> m_geometries;
-        std::vector<VkAccelerationStructureBuildRangeInfoKHR> m_build_ranges;
-        std::vector<u32> m_primitive_counts;
-
-        VkAccelerationStructureBuildSizesInfoKHR m_size;
-        VkAccelerationStructureBuildGeometryInfoKHR m_build_info;
-
-        std::unique_ptr<Buffer> m_scratch;
+        VkAccelerationStructureKHR m_as { VK_NULL_HANDLE };
+        VkDeviceAddress m_address { 0 };
     };
 
     class BLAS final : public AccelerationStructure
     {
+        friend class AccelerationStructureBuilder;
     public:
-        struct Geometry
+        struct Input
         {
-            struct
-            {
-                Buffer* buffer { nullptr };
-                u32 count { 0 };
-                VkFormat format { VK_FORMAT_UNDEFINED };
-                u32 stride { 0 };
-            } vertices;
+            std::vector<VkAccelerationStructureGeometryKHR> geometries;
+            std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+            VkBuildAccelerationStructureFlagsKHR flags { VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR };
 
-            struct
-            {
-                Buffer* buffer { nullptr };
-                u32 count = 0;
-            } indices;
-
-            bool opaque { true };
+            auto add_geometry(const Buffer& vertex_buffer, u32 vertex_count, u32 vertex_stride, const Buffer& index_buffer, u32 index_count, bool opaque = true) -> void;
         };
 
     public:
-        BLAS(const std::shared_ptr<Device>& device, const std::span<Geometry>& geometries);
+        BLAS(const std::shared_ptr<Device>& device, u64 size);
         virtual ~BLAS() = default;
-
-        BLAS(const BLAS&) = delete;
-        BLAS& operator=(const BLAS&) = delete;
     };
 
     class TLAS final : public AccelerationStructure
     {
+        friend class AccelerationStructureBuilder;
     public:
-        struct Instance
+        struct Input
         {
-            BLAS* blas { nullptr };
-            glm::mat4 transform { 1.0f };
-            u32 instance_index { 0 };
-            u32 mask { 0xFF };
-            u32 sbt_offset { 0 };
-            VkGeometryInstanceFlagsKHR flags { VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR };
+            std::vector<VkAccelerationStructureInstanceKHR> instances;
+            VkBuildAccelerationStructureFlagsKHR flags { VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR };
         };
 
     public:
-        TLAS(const std::shared_ptr<Device>& device, const std::span<Instance>& instances);
+        TLAS(const std::shared_ptr<Device>& device, u64 size, std::unique_ptr<Buffer>&& instances);
         virtual ~TLAS() = default;
 
-        TLAS(const TLAS&) = delete;
-        TLAS& operator=(const TLAS&) = delete;
+        [[nodiscard]] auto instances() const -> const Buffer& { return *m_instances; }
 
     private:
         std::unique_ptr<Buffer> m_instances;
+    };
+
+
+    class AccelerationStructureBuilder
+    {
+    public:
+        AccelerationStructureBuilder(const std::shared_ptr<Device>& device);
+        ~AccelerationStructureBuilder() = default;
+
+        auto build_blas(VkCommandBuffer cmd, const std::vector<BLAS::Input>& inputs) -> std::vector<std::unique_ptr<BLAS>>;
+        auto build_tlas(VkCommandBuffer cmd, const TLAS::Input& input) -> std::unique_ptr<TLAS>;
+
+        auto cleanup() -> void
+        {
+            m_scratch.clear();
+            m_staging.clear();
+        }
+
+    private:
+        auto ensure_scratch(u64 size) -> VkDeviceAddress;
+
+    private:
+        std::shared_ptr<Device> m_device;
+
+        std::vector<std::unique_ptr<Buffer>> m_scratch;
+        std::vector<std::unique_ptr<Buffer>> m_staging;
     };
 
 }

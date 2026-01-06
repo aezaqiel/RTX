@@ -71,7 +71,7 @@ namespace RHI {
         unmap();
     }
 
-    auto Buffer::stage(VkCommandBuffer cmd, Buffer& staging, VkPipelineStageFlags2 stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, VkAccessFlags2 access = VK_ACCESS_2_TRANSFER_WRITE_BIT) -> void
+    auto Buffer::stage(VkCommandBuffer cmd, Buffer& staging, VkPipelineStageFlags2 stage, VkAccessFlags2 access) -> void
     {
         RHI::Buffer::copy(cmd, staging, *this,
             VK_PIPELINE_STAGE_2_TRANSFER_BIT, stage,

@@ -153,7 +153,7 @@ auto main() -> i32
         compute_queue->sync(signals.back().value);
     }
 
-    std::println("load shaders");
+    std::println("loading shaders");
 
     auto raygen_shader = std::make_unique<RHI::Shader>(device, "raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     auto closesthit_shader = std::make_unique<RHI::Shader>(device, "closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);

@@ -22,8 +22,8 @@ file(TO_CMAKE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/res RES_FOLDER)
 file(TO_CMAKE_PATH ${SHADER_BIN_DIR} SHADER_FOLDER)
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/PathConfig.inl
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/PathConfig.inl
+    ${CMAKE_CURRENT_SOURCE_DIR}/pathconfig.inl
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/pathconfig.inl
     @ONLY
 )
 

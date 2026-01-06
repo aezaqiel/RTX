@@ -1,6 +1,6 @@
 #include "shader.hpp"
 
-#include <PathConfig.inl>
+#include <pathconfig.inl>
 
 namespace RHI {
 

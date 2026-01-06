@@ -1,7 +1,7 @@
 #include "loader.hpp"
 
 #include <tiny_obj_loader.h>
-#include <PathConfig.inl>
+#include <pathconfig.inl>
 
 namespace {
 

@@ -87,11 +87,11 @@ auto main() -> i32
     std::unique_ptr<RHI::Buffer> sponza_vb;
     std::unique_ptr<RHI::Buffer> sponza_ib;
 
-    u64 sponza_vb_size = sponza.mesh->positions.size() * sizeof(glm::vec3);
+    u64 sponza_vb_size = sponza.mesh->vertices.size() * sizeof(Vertex);
     u64 sponza_ib_size = sponza.mesh->indices.size() * sizeof(u32);
 
     RHI::Buffer sponza_vb_staging(device, sponza_vb_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    sponza_vb_staging.write(sponza.mesh->positions.data(), sponza_vb_size);
+    sponza_vb_staging.write(sponza.mesh->vertices.data(), sponza_vb_size);
 
     RHI::Buffer sponza_ib_staging(device, sponza_ib_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
     sponza_ib_staging.write(sponza.mesh->indices.data(), sponza_ib_size);
@@ -114,11 +114,11 @@ auto main() -> i32
     std::unique_ptr<RHI::Buffer> teapot_vb;
     std::unique_ptr<RHI::Buffer> teapot_ib;
 
-    u64 teapot_vb_size = teapot.mesh->positions.size() * sizeof(glm::vec3);
+    u64 teapot_vb_size = teapot.mesh->vertices.size() * sizeof(Vertex);
     u64 teapot_ib_size = teapot.mesh->indices.size() * sizeof(u32);
 
     RHI::Buffer teapot_vb_staging(device, teapot_vb_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    teapot_vb_staging.write(teapot.mesh->positions.data(), teapot_vb_size);
+    teapot_vb_staging.write(teapot.mesh->vertices.data(), teapot_vb_size);
 
     RHI::Buffer teapot_ib_staging(device, teapot_ib_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
     teapot_ib_staging.write(teapot.mesh->indices.data(), teapot_ib_size);
@@ -291,10 +291,10 @@ auto main() -> i32
     vkCmdPipelineBarrier2(as_cmd, &acquire_dependency);
 
     RHI::BLAS::Input sponza_blas;
-    sponza_blas.add_geometry(*sponza_vb, sponza.mesh->positions.size(), sizeof(glm::vec3), *sponza_ib, sponza.mesh->indices.size());
+    sponza_blas.add_geometry(*sponza_vb, sponza.mesh->vertices.size(), sizeof(Vertex), *sponza_ib, sponza.mesh->indices.size());
 
     RHI::BLAS::Input teapot_blas;
-    teapot_blas.add_geometry(*teapot_vb, teapot.mesh->positions.size(), sizeof(glm::vec3), *teapot_ib, teapot.mesh->indices.size());
+    teapot_blas.add_geometry(*teapot_vb, teapot.mesh->vertices.size(), sizeof(Vertex), *teapot_ib, teapot.mesh->indices.size());
 
     auto blases = as_builder.build_blas(as_cmd, {
         sponza_blas,

@@ -2,17 +2,15 @@
 
 #include <glm/glm.hpp>
 
-#include "rhi/buffer.hpp"
+struct Vertex
+{
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 uv;
+};
 
 struct Mesh
 {
-    struct VertexAttribute
-    {
-        glm::vec3 normal;
-        glm::vec2 uv;
-    };
-
-    std::vector<glm::vec3> positions;
+    std::vector<Vertex> vertices;
     std::vector<u32> indices;
-    std::vector<VertexAttribute> attributes;
 };

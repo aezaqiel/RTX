@@ -1,6 +1,8 @@
 #include "loader.hpp"
 
 #include <tiny_obj_loader.h>
+#include <meshoptimizer.h>
+
 #include <pathconfig.inl>
 
 namespace {
@@ -11,6 +13,8 @@ namespace {
 
 auto Loader::load_obj(const std::string& filename) -> Model
 {
+    std::println("loading {}", filename);
+
     std::string path = (s_respath / filename).string();
     std::string base_dir = std::filesystem::path(filename).parent_path().string();
 
@@ -32,12 +36,8 @@ auto Loader::load_obj(const std::string& filename) -> Model
     const auto& attrib = reader.GetAttrib();
     const auto& shapes = reader.GetShapes();
 
-    std::vector<glm::vec3> positions;
-    std::vector<u32> indices;
-    std::vector<Mesh::VertexAttribute> attributes;
-
-    positions.reserve(attrib.vertices.size() / 3);
-    attributes.reserve(attrib.vertices.size() / 3);
+    std::vector<Vertex> raw_vertices;
+    raw_vertices.reserve(attrib.vertices.size() / 3);
 
     for (const auto& shape : shapes) {
         usize offset = 0;
@@ -51,16 +51,16 @@ auto Loader::load_obj(const std::string& filename) -> Model
             for (usize v = 0; v < 3; ++v) {
                 tinyobj::index_t idx = shape.mesh.indices[offset + v];
 
-                positions.push_back({
+                Vertex vertex;
+
+                vertex.position = {
                     attrib.vertices[3 * idx.vertex_index + 0],
                     attrib.vertices[3 * idx.vertex_index + 1],
                     attrib.vertices[3 * idx.vertex_index + 2]
-                });
-
-                Mesh::VertexAttribute vertex_attrib;
+                };
 
                 if (idx.normal_index >= 0) {
-                    vertex_attrib.normal = {
+                    vertex.normal = {
                         attrib.normals[3 * idx.normal_index + 0],
                         attrib.normals[3 * idx.normal_index + 1],
                         attrib.normals[3 * idx.normal_index + 2]
@@ -68,26 +68,44 @@ auto Loader::load_obj(const std::string& filename) -> Model
                 }
 
                 if (idx.texcoord_index >= 0) {
-                    vertex_attrib.uv = {
+                    vertex.uv = {
                         attrib.texcoords[2 * idx.texcoord_index + 0],
                         attrib.texcoords[2 * idx.texcoord_index + 1]
                     };
                 }
 
-                attributes.push_back(vertex_attrib);
-                indices.push_back(static_cast<u32>(indices.size()));
+                raw_vertices.push_back(vertex);
             }
 
             offset += 3;
         }
     }
 
-    auto mesh = std::make_unique<Mesh>();
-    mesh->positions = positions;
-    mesh->indices = indices;
-    mesh->attributes = attributes;
+    std::println(" - raw data points: {}", raw_vertices.size());
 
-    std::println("loaded model: {} ({} vertices)", filename, positions.size());
+    usize index_count = raw_vertices.size();
+    std::vector<u32> remap(index_count);
+
+    usize vertex_count = meshopt_generateVertexRemap( remap.data(), nullptr, index_count, raw_vertices.data(), index_count, sizeof(Vertex));
+
+    std::vector<u32> indices(index_count);
+    std::vector<Vertex> unique_vertices(vertex_count);
+
+    meshopt_remapIndexBuffer(indices.data(), nullptr, index_count, remap.data());
+    meshopt_remapVertexBuffer(unique_vertices.data(), raw_vertices.data(), index_count, sizeof(Vertex), remap.data());
+
+    meshopt_optimizeVertexCache(indices.data(), indices.data(), index_count, vertex_count);
+
+    std::vector<Vertex> vertices(vertex_count);
+
+    meshopt_optimizeVertexFetch(vertices.data(), indices.data(), index_count, unique_vertices.data(), vertex_count, sizeof(Vertex));
+
+    auto mesh = std::make_unique<Mesh>();
+    mesh->indices = std::move(indices);
+    mesh->vertices = std::move(vertices);
+
+    std::println(" - vertices: {}", mesh->vertices.size());
+    std::println(" - triangles: {}", mesh->indices.size() / 3);
 
     return Model { .mesh = std::move(mesh) };
 }

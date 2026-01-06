@@ -213,8 +213,6 @@ auto main() -> i32
 
     std::println("AS build");
 
-    std::vector<std::unique_ptr<RHI::TLAS>> tlases;
-
     RHI::AccelerationStructureBuilder as_builder(device);
 
     auto as_cmd = compute_command->begin();
@@ -290,33 +288,30 @@ auto main() -> i32
 
     vkCmdPipelineBarrier2(as_cmd, &acquire_dependency);
 
-    RHI::BLAS::Input sponza_blas;
-    sponza_blas.add_geometry(*sponza_vb, sponza.mesh->vertices.size(), sizeof(Vertex), *sponza_ib, sponza.mesh->indices.size());
+    RHI::BLAS::Input sponza_blas_input;
+    sponza_blas_input.add_geometry(*sponza_vb, sponza.mesh->vertices.size(), sizeof(Vertex), *sponza_ib, sponza.mesh->indices.size());
 
-    RHI::BLAS::Input teapot_blas;
-    teapot_blas.add_geometry(*teapot_vb, teapot.mesh->vertices.size(), sizeof(Vertex), *teapot_ib, teapot.mesh->indices.size());
+    RHI::BLAS::Input teapot_blas_input;
+    teapot_blas_input.add_geometry(*teapot_vb, teapot.mesh->vertices.size(), sizeof(Vertex), *teapot_ib, teapot.mesh->indices.size());
 
     auto blases = as_builder.build_blas(as_cmd, {
-        sponza_blas,
-        teapot_blas
+        sponza_blas_input,
+        teapot_blas_input
     });
 
+    RHI::TLAS::Input tlas_input;
     for (const auto& blas : blases) {
-        VkAccelerationStructureInstanceKHR instance {
+        tlas_input.instances.push_back(VkAccelerationStructureInstanceKHR {
             .transform = vkutils::glm_to_vkmatrix(glm::mat4(1.0f)),
             .instanceCustomIndex = 0,
             .mask = 0xFF,
             .instanceShaderBindingTableRecordOffset = 0,
             .flags = 0,
             .accelerationStructureReference = blas->address()
-        };
-
-        RHI::TLAS::Input tlas_input {
-            .instances = std::vector<VkAccelerationStructureInstanceKHR>(1, instance)
-        };
-
-        tlases.push_back(as_builder.build_tlas(as_cmd, tlas_input));
+        });
     }
+
+    auto tlas = as_builder.build_tlas(as_cmd, tlas_input);
 
     compute_command->end(as_cmd);
 

@@ -143,9 +143,11 @@ namespace RHI {
 
         vkCmdBuildAccelerationStructuresKHR(cmd, static_cast<u32>(build_infos.size()), build_infos.data(), range_ptrs.data());
 
-        BarrierBatch(cmd)
-            .memory(VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
-            .insert();
+        auto barrier = BarrierBatch(cmd);
+        for (const auto& blas : blases) {
+            barrier = barrier.buffer(blas->buffer(), VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+        }
+        barrier.insert();
 
         std::vector<VkAccelerationStructureKHR> handles;
         handles.reserve(blases.size());
@@ -188,9 +190,11 @@ namespace RHI {
             );
         }
 
-        BarrierBatch(cmd)
-            .memory(VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
-            .insert();
+        auto barrier = BarrierBatch(cmd);
+        for (const auto& blas : compacted) {
+            barrier = barrier.buffer(blas->buffer(), VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+        }
+        barrier.insert();
 
         return compacted;
     }
@@ -266,7 +270,7 @@ namespace RHI {
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build_info, &p_range);
 
         BarrierBatch(cmd)
-            .memory(VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+            .buffer(tlas->buffer(), VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
             .insert();
 
         return std::move(tlas);

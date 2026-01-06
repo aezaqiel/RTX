@@ -2,7 +2,7 @@
 
 #include "rhi/barrier.hpp"
 #include "rhi/acceleration_structure.hpp"
-#include "rhi/shader.hpp"
+// #include "rhi/shader.hpp"
 
 #include "scene/loader.hpp"
 
@@ -49,11 +49,7 @@ Application::~Application()
 auto Application::run() -> void
 {
     load_scene();
-
-    auto rt_descriptor_layout = RHI::DescriptorLayout::Builder(m_device)
-        .add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
-        .add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
-        .build();
+    build_rt_pipeline();
 
     // auto raygen_shader = std::make_unique<RHI::Shader>(m_device, "raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     // auto closesthit_shader = std::make_unique<RHI::Shader>(m_device, "closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -63,10 +59,14 @@ auto Application::run() -> void
         Window::poll_events();
 
         if (!m_minimized) {
+            // sync frames in flight
+
             if (m_frame_count >= s_FramesInFlight) {
                 u64 wait_value = m_frame_count - s_FramesInFlight + 1;
                 m_graphics_queue->sync(wait_value);
             }
+
+            u64 frame_index = m_frame_count % s_FramesInFlight;
 
             // acquire swapchain image
 
@@ -75,13 +75,11 @@ auto Application::run() -> void
                 continue;
             }
 
-            u64 frame_index = m_frame_count % s_FramesInFlight;
-
-            // descriptors
+            // descriptor set
 
             m_descriptor_allocators[frame_index]->reset();
 
-            VkDescriptorSet rt_set = m_descriptor_allocators[frame_index]->allocate(*rt_descriptor_layout);
+            VkDescriptorSet rt_set = m_descriptor_allocators[frame_index]->allocate(*m_rt_descriptor_layout);
             RHI::DescriptorWriter(m_device)
                 .write_as(0, *m_tlas)
                 .write_storage_image(1, *m_storage)
@@ -90,18 +88,111 @@ auto Application::run() -> void
             // record commands
 
             auto compute_cmd = m_compute_command->begin();
+
+            u32 storage_src_queue = (m_frame_count == 0) ? VK_QUEUE_FAMILY_IGNORED : m_device->graphics_index();
+            u32 storage_dst_queue = (m_frame_count == 0) ? VK_QUEUE_FAMILY_IGNORED : m_device->compute_index();
+
+            VkImageLayout storage_old_layout = (m_frame_count == 0) ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+            RHI::BarrierBatch(compute_cmd)
+                .image(*m_storage,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_NONE,
+                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                    storage_old_layout, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    storage_src_queue, storage_dst_queue
+                )
+                .insert();
+
+            // TODO: bind rt pipeline && dispatch rays
+
+            RHI::BarrierBatch(compute_cmd)
+                .image(*m_storage,
+                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_NONE,
+                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    m_device->compute_index(), m_device->graphics_index()
+                )
+                .insert();
+
             m_compute_command->end(compute_cmd);
 
             auto graphics_cmd = m_graphics_command->begin();
+
             RHI::BarrierBatch(graphics_cmd)
-                .image(m_swapchain->current_image(), VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+                .image(*m_storage,
+                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_NONE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+                    VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    m_device->compute_index(), m_device->graphics_index()
+                )
+                .image(m_swapchain->current_image(),
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT
+                )
                 .insert();
+
+            VkImageBlit blit_region {
+                .srcSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                },
+                .srcOffsets = {
+                    { 0, 0, 0 },
+                    { static_cast<i32>(m_storage->width()), static_cast<i32>(m_storage->height()), 1 }
+                },
+                .dstSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                },
+                .dstOffsets = {
+                    { 0, 0, 0 },
+                    { static_cast<i32>(m_swapchain->width()), static_cast<i32>(m_swapchain->height()), 1 }
+                },
+            };
+
+            vkCmdBlitImage(graphics_cmd,
+                m_storage->image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                m_swapchain->current_image().image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1, &blit_region,
+                VK_FILTER_LINEAR
+            );
+
+            RHI::BarrierBatch(graphics_cmd)
+                .image(*m_storage,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_NONE,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    m_device->graphics_index(), m_device->compute_index()
+                )
+                .image(m_swapchain->current_image(),
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_IMAGE_ASPECT_COLOR_BIT
+                )
+                .insert();
+
             m_graphics_command->end(graphics_cmd);
 
             // submit commands
 
             std::vector<VkSemaphoreSubmitInfo> compute_waits;
             std::vector<VkSemaphoreSubmitInfo> compute_signals;
+
+            if (m_frame_count > 0) {
+                compute_waits.push_back(m_graphics_queue->wait_info(VK_PIPELINE_STAGE_2_TRANSFER_BIT));
+            }
+
             u64 compute_signal_value = m_compute_queue->submit(compute_cmd, compute_waits, compute_signals);
 
             std::vector<VkSemaphoreSubmitInfo> graphics_waits {
@@ -140,11 +231,13 @@ auto Application::load_scene() -> void
     auto teapot_vb = RHI::Buffer::create_staged(m_device, upload_cmd, teapot.mesh->vertices.data(), teapot.mesh->vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
     auto teapot_ib = RHI::Buffer::create_staged(m_device, upload_cmd, teapot.mesh->indices.data(), teapot.mesh->indices.size() * sizeof(u32), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
+    // relase ownership
+
     RHI::BarrierBatch(upload_cmd)
-        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
-        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
-        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
-        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)
+        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, m_device->transfer_index(), m_device->compute_index())
         .insert();
 
     m_transfer_command->end(upload_cmd);
@@ -159,10 +252,10 @@ auto Application::load_scene() -> void
     // take ownership
 
     RHI::BarrierBatch(blas_cmd)
-        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
-        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
-        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
-        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR)
+        .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*sponza_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*teapot_vb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, m_device->transfer_index(), m_device->compute_index())
+        .buffer(*teapot_ib, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, m_device->transfer_index(), m_device->compute_index())
         .insert();
 
     RHI::BLAS::Input sponza_blas_input;
@@ -180,6 +273,8 @@ auto Application::load_scene() -> void
 
     std::vector<VkSemaphoreSubmitInfo> blas_signals;
     u64 blas_timeline = m_compute_queue->submit(blas_cmd, upload_signals, blas_signals);
+
+    m_compute_queue->sync(blas_timeline);
 
     auto compact_cmd = m_compute_command->begin();
 
@@ -212,6 +307,14 @@ auto Application::load_scene() -> void
     u64 tlas_timeline = m_compute_queue->submit(tlas_cmd, compact_signals, tlas_signals);
 
     m_compute_queue->sync(tlas_timeline);
+}
+
+auto Application::build_rt_pipeline() -> void
+{
+    m_rt_descriptor_layout = RHI::DescriptorLayout::Builder(m_device)
+        .add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+        .add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+        .build();
 }
 
 auto Application::dispatch_events(const Event& event) -> void

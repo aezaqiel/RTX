@@ -23,6 +23,7 @@ public:
 
 private:
     auto load_scene() -> void;
+    auto build_rt_pipeline() -> void;
 
     auto dispatch_events(const Event& event) -> void;
 
@@ -50,10 +51,12 @@ private:
 
     std::unique_ptr<RHI::Image> m_storage;
 
+    std::array<std::unique_ptr<RHI::DescriptorAllocator>, s_FramesInFlight> m_descriptor_allocators;
+
     std::vector<std::unique_ptr<RHI::BLAS>> m_blases;
     std::unique_ptr<RHI::TLAS> m_tlas;
 
-    std::array<std::unique_ptr<RHI::DescriptorAllocator>, s_FramesInFlight> m_descriptor_allocators;
+    std::unique_ptr<RHI::DescriptorLayout> m_rt_descriptor_layout;
 
     u64 m_frame_count { 0 };
 };

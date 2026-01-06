@@ -1,5 +1,7 @@
 #include "buffer.hpp"
 
+#include "barrier.hpp"
+
 namespace RHI {
 
     Buffer::Buffer(const std::shared_ptr<Device>& device, u64 size, VkBufferUsageFlags buffer_usage, VmaMemoryUsage memory_usage, VmaAllocationCreateFlags allocation_flags)
@@ -110,26 +112,9 @@ namespace RHI {
         VkBufferCopy region { .srcOffset = 0, .dstOffset = 0, .size = dst.size() };
         vkCmdCopyBuffer(cmd, src.buffer(), dst.buffer(), 1, &region);
 
-        VkBufferMemoryBarrier2 barrier {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .srcStageMask = src_stage,
-            .srcAccessMask = src_access,
-            .dstStageMask = dst_stage,
-            .dstAccessMask = dst_access,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = dst.buffer(),
-            .offset = 0,
-            .size = dst.size()
-        };
-
-        VkDependencyInfo dependency {
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .bufferMemoryBarrierCount = 1,
-            .pBufferMemoryBarriers = &barrier
-        };
-
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        BarrierBatch(cmd)
+            .buffer(dst, src_stage, src_access, dst_stage, dst_access)
+            .insert();
     }
 
 }

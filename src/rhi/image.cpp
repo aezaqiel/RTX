@@ -65,8 +65,6 @@ namespace RHI {
 
     auto Image::create_view() -> void
     {
-        m_aspect = image_aspect_from_format(m_format);
-
         VkImageViewCreateInfo view_info {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .pNext = nullptr,
@@ -81,7 +79,7 @@ namespace RHI {
                 .a = VK_COMPONENT_SWIZZLE_IDENTITY
             },
             .subresourceRange = {
-                .aspectMask = m_aspect,
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
                 .levelCount = m_mips,
                 .baseArrayLayer = 0,

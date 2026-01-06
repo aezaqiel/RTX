@@ -25,7 +25,6 @@ namespace RHI {
         [[nodiscard]] auto depth() const -> u32 { return m_extent.depth; }
 
         [[nodiscard]] auto format() const -> VkFormat { return m_format; }
-        [[nodiscard]] auto aspect() const -> VkImageAspectFlags { return m_aspect; }
 
         [[nodiscard]] auto mips() const -> u32 { return m_mips; }
         [[nodiscard]] auto layers() const -> u32 { return m_layers; }
@@ -43,9 +42,7 @@ namespace RHI {
         VmaAllocation m_allocation { VK_NULL_HANDLE };
 
         VkExtent3D m_extent { 0, 0, 0 };
-
         VkFormat m_format { VK_FORMAT_UNDEFINED };
-        VkImageAspectFlags m_aspect { VK_IMAGE_ASPECT_NONE };
 
         u32 m_mips { 1 };
         u32 m_layers { 1 };

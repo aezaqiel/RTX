@@ -78,61 +78,25 @@ auto main() -> i32
     auto compute_command = std::make_unique<RHI::Command>(device, device->compute_index(), FRAMES_IN_FLIGHT);
     auto transfer_command = std::make_unique<RHI::Command>(device, device->transfer_index(), FRAMES_IN_FLIGHT);
 
-    auto sponza = Loader::load_obj("assets/sponza/sponza.obj");
+    std::vector<std::unique_ptr<RHI::Buffer>> staging_buffers;
 
     auto upload_cmd = transfer_command->begin();
 
-    std::unique_ptr<RHI::Buffer> sponza_vb;
-    std::unique_ptr<RHI::Buffer> sponza_ib;
+    auto sponza = Loader::load_obj("assets/sponza/sponza.obj");
 
     u64 sponza_vb_size = sponza.mesh->vertices.size() * sizeof(Vertex);
     u64 sponza_ib_size = sponza.mesh->indices.size() * sizeof(u32);
 
-    RHI::Buffer sponza_vb_staging(device, sponza_vb_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    sponza_vb_staging.write(sponza.mesh->vertices.data(), sponza_vb_size);
-
-    RHI::Buffer sponza_ib_staging(device, sponza_ib_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    sponza_ib_staging.write(sponza.mesh->indices.data(), sponza_ib_size);
-
-    sponza_vb = std::make_unique<RHI::Buffer>(device, sponza_vb_size,
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-    );
-
-    sponza_ib = std::make_unique<RHI::Buffer>(device, sponza_ib_size,
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-    );
-
-    sponza_vb->stage(upload_cmd, sponza_vb_staging);
-    sponza_ib->stage(upload_cmd, sponza_ib_staging);
+    auto sponza_vb = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->vertices.data(), sponza_vb_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
+    auto sponza_ib = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->indices.data(), sponza_ib_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
     auto teapot = Loader::load_obj("assets/teapot.obj");
-
-    std::unique_ptr<RHI::Buffer> teapot_vb;
-    std::unique_ptr<RHI::Buffer> teapot_ib;
 
     u64 teapot_vb_size = teapot.mesh->vertices.size() * sizeof(Vertex);
     u64 teapot_ib_size = teapot.mesh->indices.size() * sizeof(u32);
 
-    RHI::Buffer teapot_vb_staging(device, teapot_vb_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    teapot_vb_staging.write(teapot.mesh->vertices.data(), teapot_vb_size);
-
-    RHI::Buffer teapot_ib_staging(device, teapot_ib_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
-    teapot_ib_staging.write(teapot.mesh->indices.data(), teapot_ib_size);
-
-    teapot_vb = std::make_unique<RHI::Buffer>(device, teapot_vb_size,
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-    );
-
-    teapot_ib = std::make_unique<RHI::Buffer>(device, teapot_ib_size,
-        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-    );
-
-    teapot_vb->stage(upload_cmd, teapot_vb_staging);
-    teapot_ib->stage(upload_cmd, teapot_ib_staging);
+    auto teapot_vb = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->vertices.data(), teapot_vb_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
+    auto teapot_ib = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->indices.data(), teapot_ib_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
     // release ownership
     std::array<VkBufferMemoryBarrier2, 4> release_barriers {
@@ -332,6 +296,7 @@ auto main() -> i32
 
     compute_queue->sync(tlas_timeline);
 
+    staging_buffers.clear();
     raw_blases.clear();
     as_builder.cleanup();
 

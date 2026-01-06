@@ -79,7 +79,28 @@ namespace RHI {
         );
     }
 
-    auto Buffer::copy(VkCommandBuffer cmd, Buffer& src, Buffer& dst,
+    auto Buffer::create_staged(
+        const std::shared_ptr<Device>& device,
+        VkCommandBuffer cmd,
+        const void* data,
+        u64 size,
+        VkBufferUsageFlags usage,
+        std::vector<std::unique_ptr<Buffer>>& stagings
+    ) -> std::unique_ptr<Buffer>
+    {
+        auto& stage = stagings.emplace_back(std::make_unique<Buffer>(device, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT));
+        stage->write(data, size);
+
+        auto buffer = std::make_unique<Buffer>(device, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+        buffer->stage(cmd, *stage);
+
+        return std::move(buffer);
+    }
+
+    auto Buffer::copy(
+        VkCommandBuffer cmd,
+        Buffer& src,
+        Buffer& dst,
         VkPipelineStageFlags2 src_stage,
         VkPipelineStageFlags2 dst_stage,
         VkAccessFlags2 src_access,

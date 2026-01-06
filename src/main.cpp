@@ -84,20 +84,12 @@ auto main() -> i32
     auto upload_cmd = transfer_command->begin();
 
     auto sponza = Loader::load_obj("assets/sponza/sponza.obj");
-
-    u64 sponza_vb_size = sponza.mesh->vertices.size() * sizeof(Vertex);
-    u64 sponza_ib_size = sponza.mesh->indices.size() * sizeof(u32);
-
-    auto sponza_vb = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->vertices.data(), sponza_vb_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
-    auto sponza_ib = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->indices.data(), sponza_ib_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
+    auto sponza_vb = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->vertices.data(), sponza.mesh->vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
+    auto sponza_ib = RHI::Buffer::create_staged(device, upload_cmd, sponza.mesh->indices.data(), sponza.mesh->indices.size() * sizeof(u32), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
     auto teapot = Loader::load_obj("assets/teapot.obj");
-
-    u64 teapot_vb_size = teapot.mesh->vertices.size() * sizeof(Vertex);
-    u64 teapot_ib_size = teapot.mesh->indices.size() * sizeof(u32);
-
-    auto teapot_vb = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->vertices.data(), teapot_vb_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
-    auto teapot_ib = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->indices.data(), teapot_ib_size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
+    auto teapot_vb = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->vertices.data(), teapot.mesh->vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, staging_buffers);
+    auto teapot_ib = RHI::Buffer::create_staged(device, upload_cmd, teapot.mesh->indices.data(), teapot.mesh->indices.size() * sizeof(u32), VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, staging_buffers);
 
     RHI::BarrierBatch(upload_cmd)
         .buffer(*sponza_vb, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE)

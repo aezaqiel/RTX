@@ -131,13 +131,11 @@ namespace RHI {
         }
 
         VkDeviceAddress scratch_address = ensure_scratch(total_scratch);
-
         for (usize i = 0; i < build_infos.size(); ++i) {
             build_infos[i].scratchData.deviceAddress = scratch_address + scratch_offsets[i];
-
-            const VkAccelerationStructureBuildRangeInfoKHR* ranges = range_ptrs[i];
-            vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build_infos[i], &ranges);
         }
+
+        vkCmdBuildAccelerationStructuresKHR(cmd, static_cast<u32>(build_infos.size()), build_infos.data(), range_ptrs.data());
 
         VkMemoryBarrier2 build_barrier {
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,

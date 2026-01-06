@@ -70,6 +70,8 @@ add_executable(${PROJECT_NAME}
     src/rhi/acceleration_structure.cpp
     src/rhi/shader.hpp
     src/rhi/shader.cpp
+    src/rhi/descriptor.hpp
+    src/rhi/descriptor.cpp
 
     src/scene/mesh.hpp
     src/scene/model.hpp

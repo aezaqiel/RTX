@@ -9,6 +9,9 @@
 
 #include "rhi/command.hpp"
 #include "rhi/queue.hpp"
+#include "rhi/image.hpp"
+
+#include "rhi/descriptor.hpp"
 
 class Application
 {
@@ -19,7 +22,12 @@ public:
     auto run() -> void;
 
 private:
+    auto load_scene() -> void;
+
     auto dispatch_events(const Event& event) -> void;
+
+private:
+    inline static constexpr usize s_FramesInFlight { 3 };
 
 private:
     bool m_running { true };
@@ -40,5 +48,12 @@ private:
     std::unique_ptr<RHI::Queue> m_compute_queue;
     std::unique_ptr<RHI::Queue> m_transfer_queue;
 
-    u64 m_frame_index { 0 };
+    std::unique_ptr<RHI::Image> m_storage;
+
+    std::vector<std::unique_ptr<RHI::BLAS>> m_blases;
+    std::unique_ptr<RHI::TLAS> m_tlas;
+
+    std::array<std::unique_ptr<RHI::DescriptorAllocator>, s_FramesInFlight> m_descriptor_allocators;
+
+    u64 m_frame_count { 0 };
 };
